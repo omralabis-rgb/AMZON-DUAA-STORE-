@@ -1,0 +1,6 @@
+{
+  "name": "متجر التجميل والعناية بالذكاء الاصطناعي",
+  "description": "متجر منتجات تجميل وعناية فاخر متكامل مع تحليل المنتجات بالذكاء الاصطناعي Gemini، لوحة تحكم لإضافة وتعديل المنتجات، وسلة تسوق مع إتمام الطلب المباشر عبر واتساب.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

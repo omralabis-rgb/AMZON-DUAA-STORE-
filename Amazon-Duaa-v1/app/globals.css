@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Amazon Duaa tokens — warm, premium neutrals with the sticker palette
+       as the accent system. Light mode evokes a well-lit puzzle shop. */
+    --background: 35 30% 94%;
+    --foreground: 20 15% 12%;
+    --card: 40 20% 99%;
+    --card-foreground: 20 15% 12%;
+    --popover: 40 20% 99%;
+    --popover-foreground: 20 15% 12%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 35 20% 91%;
+    --secondary-foreground: 20 12% 18%;
+    --muted: 35 20% 91%;
+    --muted-foreground: 20 8% 46%;
+    --accent: 35 20% 90%;
+    --accent-foreground: 20 12% 18%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 35 18% 86%;
+    --input: 35 18% 84%;
+    --ring: 221 83% 53%;
+    /* Sticker palette — the store's signature accent set. */
+    --sticker-blue: 221 83% 53%;
+    --sticker-amber: 38 92% 50%;
+    --sticker-green: 152 60% 40%;
+    --sticker-red: 0 72% 51%;
+    --sticker-purple: 262 60% 55%;
+    --chart-1: 221 83% 53%;
+    --chart-2: 38 92% 50%;
+    --chart-3: 152 60% 40%;
+    --chart-4: 340 75% 50%;
+    --chart-5: 262 60% 55%;
+    --radius: 0.75rem;
+  }
+  .dark {
+    /* Dark mode — deep, sophisticated, collector's display case. */
+    --background: 230 30% 5%;
+    --foreground: 30 15% 94%;
+    --card: 230 25% 8%;
+    --card-foreground: 30 15% 94%;
+    --popover: 230 25% 8%;
+    --popover-foreground: 30 15% 94%;
+    --primary: 218 92% 63%;
+    --primary-foreground: 230 30% 5%;
+    --secondary: 230 20% 12%;
+    --secondary-foreground: 30 15% 94%;
+    --muted: 230 20% 12%;
+    --muted-foreground: 230 10% 52%;
+    --accent: 230 20% 13%;
+    --accent-foreground: 30 15% 94%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 230 15% 15%;
+    --input: 230 15% 17%;
+    --ring: 218 92% 63%;
+    --chart-1: 218 92% 63%;
+    --chart-2: 38 95% 58%;
+    --chart-3: 152 65% 45%;
+    --chart-4: 340 80% 58%;
+    --chart-5: 262 70% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    @apply overflow-x-hidden;
+    scrollbar-gutter: stable;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  /* Suppress native browser password-reveal icons so the custom toggle is the only one. */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none;
+  }
+  html body[data-scroll-locked] {
+    overflow: clip !important;
+    margin-right: 0 !important;
+  }
+  html .right-scroll-bar-position {
+    right: 0 !important;
+  }
+  html .width-before-scroll-bar {
+    margin-right: 0 !important;
+  }
+}
+
+@layer utilities {
+  /* Hairline lattice — a quiet nod to the cube's face grid. Used in the hero
+     behind the content, masked so it fades out before the section edges. */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, hsl(var(--border) / 0.65) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border) / 0.65) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* Shimmer skeleton — a premium loading sweep that replaces the basic pulse. */
+  .animate-shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 25%,
+      hsl(var(--muted-foreground) / 0.06) 50%,
+      hsl(var(--muted)) 75%
+    );
+    background-size: 800px 100%;
+    animation: shimmer 1.8s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0%   { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+  }
+}
+
+
+/* Amazon Duaa — Arabic RTL defaults. */
+html[dir="rtl"] {
+  direction: rtl;
+}
+
+html[dir="rtl"] body {
+  text-align: right;
+}
+
+html[dir="rtl"] input,
+html[dir="rtl"] textarea,
+html[dir="rtl"] select {
+  text-align: right;
+}
