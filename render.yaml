@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: elen-beauty-store
+    name: amazon-duaa-store
     env: node
     plan: free
     buildCommand: npm install && npm run build
@@ -17,4 +17,4 @@ services:
       - key: VITE_SUPABASE_ANON_KEY
         sync: false
       - key: VITE_WHATSAPP_NUMBER
-        value: 966500000000
+        value: 967777627595

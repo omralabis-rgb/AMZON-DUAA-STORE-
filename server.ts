@@ -269,4 +269,9 @@ async function startServer() {
   });
 }
 
-startServer();
+// In Vercel serverless environment, requests are routed to app directly
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
