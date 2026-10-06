@@ -4,7 +4,27 @@ import { INITIAL_PRODUCTS, INITIAL_SETTINGS } from '../data/initialData';
 const PRODUCTS_KEY = 'elen_beauty_products_v1';
 const SETTINGS_KEY = 'elen_beauty_settings_v1';
 const CART_KEY = 'elen_beauty_cart_v1';
+const WISHLIST_KEY = 'amazon_duaa_wishlist_v1';
 const ORDERS_KEY = 'elen_beauty_orders_v1';
+
+export function getStoredWishlist(): string[] {
+  try {
+    const raw = localStorage.getItem(WISHLIST_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('Error loading wishlist from storage:', e);
+    return [];
+  }
+}
+
+export function saveStoredWishlist(wishlistIds: string[]): void {
+  try {
+    localStorage.setItem(WISHLIST_KEY, JSON.stringify(wishlistIds));
+  } catch (e) {
+    console.error('Error saving wishlist to storage:', e);
+  }
+}
 const ADMIN_SESSION_KEY = 'elen_beauty_admin_session_v1';
 
 export function getStoredProducts(): Product[] {

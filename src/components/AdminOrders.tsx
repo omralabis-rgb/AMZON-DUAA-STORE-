@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
-import { Package, MessageCircle, Eye, Search, Filter, CheckCircle2, Clock, Truck, XCircle, ArrowUpRight, DollarSign } from 'lucide-react';
+import { Package, MessageCircle, Eye, Search, Filter, CheckCircle2, Clock, Truck, XCircle, ArrowUpRight, DollarSign, Code2 } from 'lucide-react';
 import { Order, OrderStatus, StoreSettings } from '../types';
 import { generateOrderStatusWhatsAppUrl } from '../lib/whatsapp';
+import { ShippingRouteMap } from './ShippingRouteMap';
 
 interface AdminOrdersProps {
   orders: Order[];
   onUpdateStatus: (orderId: string, status: OrderStatus) => void;
   settings: StoreSettings;
+  onOpenDevAdvisor?: () => void;
+  onBackToAdmin?: () => void;
 }
 
 const statusConfig: Record<
@@ -20,7 +23,13 @@ const statusConfig: Record<
   cancelled: { label: 'ملغي', color: 'text-rose-700', bg: 'bg-rose-50 border-rose-200', icon: XCircle },
 };
 
-export const AdminOrders: React.FC<AdminOrdersProps> = ({ orders, onUpdateStatus, settings }) => {
+export const AdminOrders: React.FC<AdminOrdersProps> = ({
+  orders,
+  onUpdateStatus,
+  settings,
+  onOpenDevAdvisor,
+  onBackToAdmin,
+}) => {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -57,6 +66,26 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ orders, onUpdateStatus
           <p className="text-xs text-stone-500 mt-1">
             سجل كافة الطلبات المحفوظة آلياً عند إتمام العميل للطلب عبر الواتساب مع إمكانية تحديث الحالة
           </p>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {onOpenDevAdvisor && (
+            <button
+              onClick={onOpenDevAdvisor}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <Code2 className="w-3.5 h-3.5 text-indigo-200" />
+              <span>المستشار البرمجي</span>
+            </button>
+          )}
+          {onBackToAdmin && (
+            <button
+              onClick={onBackToAdmin}
+              className="bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold px-3.5 py-2.5 rounded-xl transition-colors cursor-pointer"
+            >
+              إدارة المنتجات
+            </button>
+          )}
         </div>
       </div>
 
@@ -281,6 +310,13 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({ orders, onUpdateStatus
                 </div>
               )}
             </div>
+
+            {/* Live GPS Shipping Map when shipped */}
+            {selectedOrder.status === 'shipped' && (
+              <div className="mb-4">
+                <ShippingRouteMap order={selectedOrder} />
+              </div>
+            )}
 
             {/* Items */}
             <h4 className="text-xs font-bold text-stone-700 mb-2">قائمة المنتجات المطلوبة:</h4>

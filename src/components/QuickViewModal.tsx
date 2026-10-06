@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, ShoppingBag, MessageCircle, Star, Sparkles, Shield, Heart, Truck, Check } from 'lucide-react';
+import { X, ShoppingBag, MessageCircle, Sparkles, Shield, Heart, Truck, Check } from 'lucide-react';
 import { Product, StoreSettings } from '../types';
 import { generateSingleProductWhatsAppUrl } from '../lib/whatsapp';
+import { StarRatingDisplay } from './StarRating';
 
 interface QuickViewModalProps {
   product: Product | null;
@@ -81,11 +82,11 @@ export const QuickViewModal: React.FC<QuickViewModalProps> = ({
               <span className="text-xs font-bold text-rose-700 bg-rose-50 px-3 py-1 rounded-lg">
                 {product.category_name}
               </span>
-              <div className="flex items-center gap-1 text-amber-500 text-xs">
-                <Star className="w-4 h-4 fill-amber-400" />
-                <span className="font-bold text-stone-800">{product.rating || '4.9'}</span>
-                <span className="text-stone-400">({product.reviews_count || '25'} تقييم)</span>
-              </div>
+              <StarRatingDisplay
+                rating={product.rating || 4.9}
+                reviewsCount={product.reviews_count || 12}
+                size="sm"
+              />
             </div>
 
             {/* Title */}

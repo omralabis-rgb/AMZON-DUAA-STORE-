@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
-import { Sparkles, ShoppingBag, SlidersHorizontal, Store, Code, ShieldCheck, Package, Cloud, Lock, LogOut, CreditCard, Search, X } from 'lucide-react';
+import { Sparkles, ShoppingBag, SlidersHorizontal, Store, Code, Code2, ShieldCheck, Package, Cloud, Lock, LogOut, CreditCard, Search, X, Heart, Truck } from 'lucide-react';
 import { StoreSettings, AdminUser, Product } from '../types';
 import { env } from '../lib/env';
 import { SmartSearchBar } from './SmartSearchBar';
 
 interface NavbarProps {
-  activeTab: 'store' | 'admin' | 'orders' | 'checkout' | 'product-detail';
-  setActiveTab: (tab: 'store' | 'admin' | 'orders' | 'checkout' | 'product-detail') => void;
+  activeTab: 'store' | 'admin' | 'orders' | 'checkout' | 'product-detail' | 'dev-advisor' | 'track-order';
+  setActiveTab: (tab: 'store' | 'admin' | 'orders' | 'checkout' | 'product-detail' | 'dev-advisor' | 'track-order') => void;
   cartCount: number;
   cartTotal: number;
   onOpenCart: () => void;
+  wishlistCount: number;
+  onOpenWishlist: () => void;
   settings: StoreSettings;
   onOpenDocs: () => void;
   ordersCount: number;
@@ -27,6 +29,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   cartCount,
   cartTotal,
   onOpenCart,
+  wishlistCount,
+  onOpenWishlist,
   settings,
   onOpenDocs,
   ordersCount,
@@ -128,6 +132,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="hidden sm:inline">المتجر</span>
               </button>
 
+              <button
+                onClick={() => setActiveTab('track-order')}
+                className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl transition-all ${
+                  activeTab === 'track-order'
+                    ? 'bg-rose-600 text-white shadow-xs font-bold'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+                title="تتبع مسار وحالة طلباتك بدون تسجيل دخول"
+              >
+                <Truck className={`w-3.5 h-3.5 ${activeTab === 'track-order' ? 'text-white' : 'text-rose-600'}`} />
+                <span className="hidden sm:inline">تتبع طلبك</span>
+              </button>
+
               {cartCount > 0 && (
                 <button
                   onClick={() => setActiveTab('checkout')}
@@ -174,6 +191,21 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <SlidersHorizontal className="w-3.5 h-3.5" />
                 <span className="hidden lg:inline">لوحة التحكم</span>
               </button>
+
+              {adminUser && (
+                <button
+                  onClick={() => setActiveTab('dev-advisor')}
+                  className={`hidden sm:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl transition-all ${
+                    activeTab === 'dev-advisor'
+                      ? 'bg-indigo-600 text-white shadow-xs font-bold'
+                      : 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200'
+                  }`}
+                  title="المستشار البرمجي وتطوير المنصة"
+                >
+                  <Code2 className="w-3.5 h-3.5" />
+                  <span className="text-xs font-bold hidden md:inline">المستشار البرمجي</span>
+                </button>
+              )}
             </div>
 
             {/* Admin Logout button if logged in */}
@@ -195,6 +227,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Code className="w-3.5 h-3.5 text-rose-600" />
               <span>أكواد النشر</span>
+            </button>
+
+            {/* Wishlist Trigger Button */}
+            <button
+              onClick={onOpenWishlist}
+              className="relative p-2 sm:px-3 sm:py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-2xl border border-rose-200/80 shadow-2xs transition-all hover:shadow-xs active:scale-95 cursor-pointer flex items-center gap-1.5"
+              title="المفضلة وقائمة الأمنيات"
+            >
+              <Heart className={`w-4 h-4 sm:w-5 sm:h-5 ${wishlistCount > 0 ? 'fill-rose-500 text-rose-500' : ''}`} />
+              <span className="hidden lg:inline text-xs font-bold">المفضلة</span>
+              {wishlistCount > 0 && (
+                <span className="bg-rose-600 text-white text-[10px] sm:text-[11px] font-black px-1.5 py-0.2 rounded-full border-2 border-white animate-pulse">
+                  {wishlistCount}
+                </span>
+              )}
             </button>
 
             {/* Cart Trigger Button */}

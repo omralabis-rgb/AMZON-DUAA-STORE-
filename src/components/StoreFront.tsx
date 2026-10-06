@@ -3,6 +3,7 @@ import { Sparkles, Search, SlidersHorizontal, ArrowUpDown, ShieldCheck, Truck, G
 import { Category, Product, StoreSettings } from '../types';
 import { ProductCard } from './ProductCard';
 import { searchProducts } from '../lib/search';
+import { TrustBadgesBar } from './TrustBadgesBar';
 
 interface StoreFrontProps {
   products: Product[];
@@ -11,6 +12,8 @@ interface StoreFrontProps {
   onQuickView: (product: Product) => void;
   onOpenDetails: (product: Product) => void;
   cartProductIds: Set<string>;
+  wishlistIds?: Set<string>;
+  onToggleWishlist?: (product: Product) => void;
   settings: StoreSettings;
   onOpenAdmin: () => void;
   searchQuery?: string;
@@ -24,6 +27,8 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
   onQuickView,
   onOpenDetails,
   cartProductIds,
+  wishlistIds = new Set(),
+  onToggleWishlist,
   settings,
   onOpenAdmin,
   searchQuery = '',
@@ -137,50 +142,8 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
         </div>
       </section>
 
-      {/* Perks Ribbon */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-semibold text-stone-700">
-          <div className="bg-white p-3.5 rounded-2xl border border-stone-200/80 flex items-center gap-3 shadow-2xs">
-            <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
-              <Truck className="w-4 h-4" />
-            </div>
-            <div>
-              <span className="block font-bold text-stone-900">شحن مجاني</span>
-              <span className="text-[11px] text-stone-500">للطلبات فوق {settings.freeDeliveryThreshold} {settings.currency}</span>
-            </div>
-          </div>
-
-          <div className="bg-white p-3.5 rounded-2xl border border-stone-200/80 flex items-center gap-3 shadow-2xs">
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-            <div>
-              <span className="block font-bold text-stone-900">منتجات أصلية 100%</span>
-              <span className="text-[11px] text-stone-500">مضمونة ومفحوصة</span>
-            </div>
-          </div>
-
-          <div className="bg-white p-3.5 rounded-2xl border border-stone-200/80 flex items-center gap-3 shadow-2xs">
-            <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-              <Gift className="w-4 h-4" />
-            </div>
-            <div>
-              <span className="block font-bold text-stone-900">عينات مجانية</span>
-              <span className="text-[11px] text-stone-500">مع كل طلب بدون استثناء</span>
-            </div>
-          </div>
-
-          <div className="bg-white p-3.5 rounded-2xl border border-stone-200/80 flex items-center gap-3 shadow-2xs">
-            <div className="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center shrink-0">
-              <MessageCircle className="w-4 h-4" />
-            </div>
-            <div>
-              <span className="block font-bold text-stone-900">طلب فوري بالواتساب</span>
-              <span className="text-[11px] text-stone-500">متابعة لحظية وتوصيل سريع</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Trust Badges Bar */}
+      <TrustBadgesBar />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Category Filter Pills Bar */}
@@ -307,6 +270,8 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
                 onOpenDetails={onOpenDetails}
                 settings={settings}
                 isInCart={cartProductIds.has(product.id)}
+                isWishlisted={wishlistIds.has(product.id)}
+                onToggleWishlist={onToggleWishlist}
               />
             ))}
           </div>

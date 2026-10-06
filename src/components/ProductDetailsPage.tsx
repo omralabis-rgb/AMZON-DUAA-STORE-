@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Product, StoreSettings, ProductReview } from '../types';
 import { generateSingleProductWhatsAppUrl } from '../lib/whatsapp';
+import { StarRatingDisplay, StarRatingInput } from './StarRating';
 
 interface ProductDetailsPageProps {
   product: Product;
@@ -31,6 +32,9 @@ interface ProductDetailsPageProps {
   onOpenCheckout: () => void;
   onSelectProduct: (product: Product) => void;
   settings: StoreSettings;
+  isWishlisted?: boolean;
+  onToggleWishlist?: (product: Product) => void;
+  onUpdateProduct?: (updatedProduct: Product) => void;
 }
 
 export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
@@ -41,6 +45,9 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
   onOpenCheckout,
   onSelectProduct,
   settings,
+  isWishlisted = false,
+  onToggleWishlist,
+  onUpdateProduct,
 }) => {
   const images = product.gallery_images && product.gallery_images.length > 0
     ? [product.image_url, ...product.gallery_images.filter((img) => img !== product.image_url)]
@@ -104,7 +111,22 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
       verifiedPurchase: true,
     };
 
-    setReviews([newRev, ...reviews]);
+    const updatedReviews = [newRev, ...reviews];
+    setReviews(updatedReviews);
+
+    // Calculate new average rating & review count
+    const totalScore = updatedReviews.reduce((sum, r) => sum + (r.rating || 0), 0);
+    const newAverage = Number((totalScore / updatedReviews.length).toFixed(1));
+
+    const updatedProduct: Product = {
+      ...product,
+      rating: newAverage,
+      reviews_count: updatedReviews.length,
+      reviews_list: updatedReviews,
+    };
+
+    onUpdateProduct?.(updatedProduct);
+
     setNewReviewAuthor('');
     setNewReviewComment('');
     setShowReviewForm(false);
@@ -169,14 +191,30 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
               )}
             </div>
 
-            {/* Share button */}
-            <button
-              onClick={handleShare}
-              className="absolute top-4 left-4 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-stone-700 shadow-md flex items-center justify-center transition-colors"
-              title="مشاركة الرابط"
-            >
-              {copiedLink ? <Check className="w-4 h-4 text-emerald-600" /> : <Share2 className="w-4 h-4" />}
-            </button>
+            {/* Action Buttons: Wishlist & Share */}
+            <div className="absolute top-4 left-4 flex items-center gap-2 z-10">
+              {onToggleWishlist && (
+                <button
+                  onClick={() => onToggleWishlist(product)}
+                  className={`w-9 h-9 rounded-full shadow-md flex items-center justify-center transition-all cursor-pointer ${
+                    isWishlisted
+                      ? 'bg-rose-500 text-white shadow-rose-200'
+                      : 'bg-white/90 hover:bg-white text-stone-700 hover:text-rose-600'
+                  }`}
+                  title={isWishlisted ? 'إزالة من المفضلة' : 'إضافة للمفضلة'}
+                >
+                  <Heart className={`w-4 h-4 ${isWishlisted ? 'fill-white text-white' : ''}`} />
+                </button>
+              )}
+
+              <button
+                onClick={handleShare}
+                className="w-9 h-9 rounded-full bg-white/90 hover:bg-white text-stone-700 shadow-md flex items-center justify-center transition-colors cursor-pointer"
+                title="مشاركة الرابط"
+              >
+                {copiedLink ? <Check className="w-4 h-4 text-emerald-600" /> : <Share2 className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
 
           {/* Thumbnails Row */}
@@ -224,15 +262,19 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
                 {product.category_name}
               </span>
 
-              <div className="flex items-center gap-1 text-amber-500 text-xs">
-                <div className="flex">
-                  {[...Array(5)].map((_, i) => (
-                    <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
-                  ))}
-                </div>
-                <span className="font-extrabold text-stone-900">{product.rating || '4.9'}</span>
-                <span className="text-stone-400">({reviews.length} تقييم)</span>
-              </div>
+              <button
+                onClick={() => {
+                  document.getElementById('reviews-section')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="hover:opacity-80 transition-opacity cursor-pointer"
+                title="الانتقال لتقييمات العميلات"
+              >
+                <StarRatingDisplay
+                  rating={product.rating || 4.9}
+                  reviewsCount={reviews.length}
+                  size="sm"
+                />
+              </button>
             </div>
 
             {/* Title */}
@@ -538,7 +580,7 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
       )}
 
       {/* Customer Reviews & Social Proof Section */}
-      <section className="bg-white rounded-3xl p-6 sm:p-8 border border-stone-200 shadow-sm mb-16">
+      <section id="reviews-section" className="bg-white rounded-3xl p-6 sm:p-8 border border-stone-200 shadow-sm mb-16">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-stone-100">
           <div>
             <h2 className="text-xl sm:text-2xl font-black text-stone-900 flex items-center gap-2">
@@ -552,96 +594,153 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
 
           <button
             onClick={() => setShowReviewForm(!showReviewForm)}
-            className="bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-sm"
+            className="bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition-all shadow-sm flex items-center gap-2"
           >
-            {showReviewForm ? 'إلغاء النموذج' : 'كتابة تقييم وتجربة'}
+            <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
+            <span>{showReviewForm ? 'إلغاء النموذج' : 'كتابة تقييم وتجربة'}</span>
           </button>
         </div>
 
+        {/* Rating Breakdown & Stats Card */}
+        {reviews.length > 0 && (
+          <div className="bg-gradient-to-br from-amber-50/60 via-stone-50 to-rose-50/40 p-5 sm:p-6 rounded-2xl border border-stone-200 mb-8 grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+            {/* Overall Score Box */}
+            <div className="md:col-span-4 text-center md:border-l md:border-stone-200/80 md:pl-6">
+              <div className="text-4xl sm:text-5xl font-black text-stone-900 mb-1">
+                {(reviews.reduce((sum, r) => sum + r.rating, 0) / (reviews.length || 1)).toFixed(1)}
+              </div>
+              <div className="flex justify-center mb-1">
+                <StarRatingDisplay
+                  rating={reviews.reduce((sum, r) => sum + r.rating, 0) / (reviews.length || 1)}
+                  showNumeric={false}
+                  showCount={false}
+                  size="lg"
+                />
+              </div>
+              <div className="text-xs font-bold text-stone-600">
+                مبني على {reviews.length} تقييم حقيقي للعميلات
+              </div>
+              <div className="text-[11px] text-emerald-700 font-semibold mt-1 flex items-center justify-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>98% من العميلات يوصين بهذا المنتج</span>
+              </div>
+            </div>
+
+            {/* Star Distribution Bars */}
+            <div className="md:col-span-8 space-y-2">
+              {[5, 4, 3, 2, 1].map((starNum) => {
+                const count = reviews.filter((r) => Math.round(r.rating) === starNum).length;
+                const percentage = reviews.length > 0 ? Math.round((count / reviews.length) * 100) : 0;
+
+                return (
+                  <div key={starNum} className="flex items-center gap-3 text-xs">
+                    <span className="w-12 font-bold text-stone-700 text-left shrink-0">
+                      {starNum} نجوم
+                    </span>
+                    <div className="flex-1 h-3 bg-stone-200/70 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-amber-400 rounded-full transition-all duration-500"
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+                    <span className="w-12 text-stone-500 text-[11px] font-semibold text-right shrink-0">
+                      {percentage}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* New Review Form */}
         {showReviewForm && (
-          <form onSubmit={handleAddReview} className="bg-stone-50 p-5 rounded-2xl border border-stone-200 mb-8 space-y-4">
-            <h3 className="font-bold text-sm text-stone-800">أضيفي تقييمك للمنتج:</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <form onSubmit={handleAddReview} className="bg-stone-50 p-6 rounded-3xl border border-stone-200 mb-8 space-y-5 shadow-xs">
+            <h3 className="font-bold text-sm text-stone-900 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              <span>أضيفي تقييمك وتجربتك الخاصة للمنتج:</span>
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">اسمك الكريم:</label>
+                <label className="block text-xs font-bold text-stone-700 mb-1.5">اسمك الكريم:</label>
                 <input
                   type="text"
                   required
                   value={newReviewAuthor}
                   onChange={(e) => setNewReviewAuthor(e.target.value)}
                   placeholder="مثال: ندى الأحمد"
-                  className="w-full text-xs p-2.5 bg-white border border-stone-200 rounded-xl focus:outline-hidden focus:border-rose-500"
+                  className="w-full text-xs p-3 bg-white border border-stone-200 rounded-xl focus:outline-hidden focus:border-rose-500 font-medium"
                 />
               </div>
+
               <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">التقييم:</label>
-                <select
+                <label className="block text-xs font-bold text-stone-700 mb-1.5">التقييم (اختر عدد النجوم):</label>
+                <StarRatingInput
                   value={newReviewRating}
-                  onChange={(e) => setNewReviewRating(Number(e.target.value))}
-                  className="w-full text-xs p-2.5 bg-white border border-stone-200 rounded-xl focus:outline-hidden focus:border-rose-500 font-bold"
-                >
-                  <option value={5}>⭐⭐⭐⭐⭐ (5 نجوم - ممتاز جداً)</option>
-                  <option value={4}>⭐⭐⭐⭐ (4 نجوم - جيد جداً)</option>
-                  <option value={3}>⭐⭐⭐ (3 نجوم - متوسط)</option>
-                </select>
+                  onChange={(rating) => setNewReviewRating(rating)}
+                  size="md"
+                />
               </div>
             </div>
+
             <div>
-              <label className="block text-xs font-bold text-stone-700 mb-1">تفاصيل تجربتك:</label>
+              <label className="block text-xs font-bold text-stone-700 mb-1.5">تفاصيل تجربتك ونصلئحك للعميلات:</label>
               <textarea
                 rows={3}
                 required
                 value={newReviewComment}
                 onChange={(e) => setNewReviewComment(e.target.value)}
-                placeholder="كيف كان ملمس المنتج والنتائج على بشرتك أو شعرك؟"
-                className="w-full text-xs p-2.5 bg-white border border-stone-200 rounded-xl focus:outline-hidden focus:border-rose-500"
+                placeholder="كيف كان ملمس المنتج والنتائج على بشرتك أو شعرك عند الاستخدام؟"
+                className="w-full text-xs p-3 bg-white border border-stone-200 rounded-xl focus:outline-hidden focus:border-rose-500 font-medium"
               />
             </div>
+
             <button
               type="submit"
-              className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-6 py-2.5 rounded-xl transition-all"
+              className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-6 py-3 rounded-xl transition-all shadow-md shadow-rose-200 flex items-center gap-2"
             >
-              نشر التقييم فورياً
+              <CheckCircle2 className="w-4 h-4" />
+              <span>نشر التقييم فورياً</span>
             </button>
           </form>
         )}
 
         {/* Reviews List */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {reviews.map((rev) => (
-            <div key={rev.id} className="p-4 rounded-2xl bg-stone-50 border border-stone-200/80 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex">
-                    {[...Array(5)].map((_, i) => (
-                      <Star
-                        key={i}
-                        className={`w-3.5 h-3.5 ${
-                          i < rev.rating
-                            ? 'fill-amber-400 text-amber-400'
-                            : 'text-stone-300'
-                        }`}
-                      />
-                    ))}
+        {reviews.length === 0 ? (
+          <div className="text-center py-8 text-stone-500 text-xs">
+            لا توجد تقييمات مضافة لهذا المنتج بعد. كوني أول من يشارك تجربته مع هذا المنتج!
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {reviews.map((rev) => (
+              <div key={rev.id} className="p-4 rounded-2xl bg-stone-50 border border-stone-200/80 flex flex-col justify-between hover:border-amber-300 transition-colors">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <StarRatingDisplay
+                      rating={rev.rating}
+                      showNumeric={false}
+                      showCount={false}
+                      size="sm"
+                    />
+                    <span className="text-[11px] text-stone-400 font-medium">{rev.date}</span>
                   </div>
-                  <span className="text-[11px] text-stone-400">{rev.date}</span>
+                  <p className="text-xs text-stone-700 leading-relaxed mb-3 font-medium">"{rev.comment}"</p>
                 </div>
-                <p className="text-xs text-stone-700 leading-relaxed mb-3">"{rev.comment}"</p>
-              </div>
 
-              <div className="flex items-center justify-between text-[11px] pt-2 border-t border-stone-200/60">
-                <span className="font-bold text-stone-900">{rev.author}</span>
-                {rev.verifiedPurchase && (
-                  <span className="text-emerald-700 flex items-center gap-1 font-semibold text-[10px]">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                    مشترٍ تم التحقق منه
-                  </span>
-                )}
+                <div className="flex items-center justify-between text-[11px] pt-2 border-t border-stone-200/60">
+                  <span className="font-bold text-stone-900">{rev.author}</span>
+                  {rev.verifiedPurchase && (
+                    <span className="text-emerald-700 flex items-center gap-1 font-semibold text-[10px]">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      مشترٍ تم التحقق منه
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Back to store floating button */}

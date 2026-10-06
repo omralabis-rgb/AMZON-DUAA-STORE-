@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Search, X, Sparkles, Star, ShoppingBag, ArrowUpRight, Check, Flame, ChevronLeft } from 'lucide-react';
 import { Product, StoreSettings } from '../types';
 import { searchProducts, POPULAR_SEARCH_TAGS } from '../lib/search';
+import { searchProductsFuzzyCloud } from '../lib/cloud';
 
 interface SmartSearchBarProps {
   products: Product[];
@@ -23,7 +24,9 @@ export const SmartSearchBar: React.FC<SmartSearchBarProps> = ({
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
+  const [cloudMatches, setCloudMatches] = useState<Product[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -36,8 +39,58 @@ export const SmartSearchBar: React.FC<SmartSearchBarProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Compute live matches
-  const matches = searchProducts(products, query);
+  // Dynamic live search as user types: local fuzzy/trigram + cloud tsvector RPC
+  useEffect(() => {
+    if (!query.trim()) {
+      setCloudMatches([]);
+      return;
+    }
+
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      const { products: fetchedCloud, isCloud } = await searchProductsFuzzyCloud(query);
+      if (isCloud && fetchedCloud.length > 0) {
+        setCloudMatches(fetchedCloud);
+      } else {
+        setCloudMatches([]);
+      }
+    }, 150);
+
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    };
+  }, [query]);
+
+  // Compute live local matches
+  const localMatches = searchProducts(products, query);
+
+  // Combine cloud & local matches without duplicates
+  const matches = React.useMemo(() => {
+    if (!query.trim()) return [];
+    if (cloudMatches.length === 0) return localMatches;
+
+    const localMap = new Map(localMatches.map((m) => [m.product.id, m]));
+    const combined: typeof localMatches = [];
+
+    // Add cloud results first
+    cloudMatches.forEach((cp) => {
+      const existing = localMap.get(cp.id);
+      combined.push({
+        product: cp,
+        score: existing ? existing.score + 20 : 80,
+        matchedReason: existing?.matchedReason || 'تطابق سحابي متقدم (Supabase FTS + Trigram)',
+      });
+      localMap.delete(cp.id);
+    });
+
+    // Add remaining local matches
+    localMap.forEach((m) => combined.push(m));
+    combined.sort((a, b) => b.score - a.score);
+    return combined;
+  }, [query, localMatches, cloudMatches]);
 
   const handleSelect = (product: Product) => {
     onSelectProduct(product);

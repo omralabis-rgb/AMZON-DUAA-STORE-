@@ -20,7 +20,7 @@ export function normalizeArabic(text: string): string {
 }
 
 /**
- * Remove Arabic definite article "ال" if word starts with it
+  Remove Arabic definite article "ال" if word starts with it
  */
 export function removeAlPrefix(word: string): string {
   const norm = normalizeArabic(word);
@@ -28,6 +28,48 @@ export function removeAlPrefix(word: string): string {
     return norm.substring(2);
   }
   return norm;
+}
+
+/**
+ * Calculates trigram similarity (0.0 to 1.0) between two strings for fuzzy matching
+ */
+export function trigramSimilarity(str1: string, str2: string): number {
+  const s1 = normalizeArabic(str1);
+  const s2 = normalizeArabic(str2);
+  if (!s1 || !s2) return 0;
+  if (s1 === s2) return 1.0;
+  if (s1.includes(s2) || s2.includes(s1)) return 0.85;
+
+  const getTrigrams = (str: string) => {
+    const padded = `  ${str} `;
+    const trigrams = new Map<string, number>();
+    for (let i = 0; i < padded.length - 2; i++) {
+      const tri = padded.substring(i, i + 3);
+      trigrams.set(tri, (trigrams.get(tri) || 0) + 1);
+    }
+    return trigrams;
+  };
+
+  const t1 = getTrigrams(s1);
+  const t2 = getTrigrams(s2);
+
+  let intersection = 0;
+  let t1Total = 0;
+  let t2Total = 0;
+
+  t1.forEach((count, tri) => {
+    t1Total += count;
+    if (t2.has(tri)) {
+      intersection += Math.min(count, t2.get(tri)!);
+    }
+  });
+
+  t2.forEach((count) => {
+    t2Total += count;
+  });
+
+  if (t1Total + t2Total === 0) return 0;
+  return (2.0 * intersection) / (t1Total + t2Total);
 }
 
 /**
@@ -114,6 +156,17 @@ export function searchProducts(products: Product[], rawQuery: string): SearchMat
     if (titleNorm.includes(normQuery)) {
       score += 100;
       matchedReason = 'تطابق في عنوان المنتج';
+    }
+
+    // 2. Trigram Fuzzy Similarity Matching (handles typos & near-matches)
+    if (normQuery.length >= 2) {
+      const triSim = trigramSimilarity(titleNorm, normQuery);
+      if (triSim >= 0.25) {
+        score += Math.round(triSim * 50);
+        if (!matchedReason) {
+          matchedReason = `مطابقة ضبابية (${Math.round(triSim * 100)}%)`;
+        }
+      }
     }
 
     // 2. Token Matching

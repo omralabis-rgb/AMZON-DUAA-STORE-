@@ -1,17 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Navbar } from './components/Navbar';
 import { StoreFront } from './components/StoreFront';
-import { ProductDetailsPage } from './components/ProductDetailsPage';
-import { CheckoutPage } from './components/CheckoutPage';
 import { CartDrawer } from './components/CartDrawer';
-import { QuickViewModal } from './components/QuickViewModal';
-import { AdminProductForm } from './components/AdminProductForm';
-import { AdminProductList } from './components/AdminProductList';
-import { AdminSettings } from './components/AdminSettings';
-import { AdminOrders } from './components/AdminOrders';
-import { AdminLogin } from './components/AdminLogin';
-import { SupabaseCodeModal } from './components/SupabaseCodeModal';
-import { AdminCopilotModal } from './components/AdminCopilotModal';
+import { FlashSaleBanner } from './components/FlashSaleBanner';
 import { Product, StoreSettings, CartItem, Order, OrderStatus, AdminUser } from './types';
 import { INITIAL_CATEGORIES } from './data/initialData';
 import {
@@ -19,6 +10,8 @@ import {
   saveStoredSettings,
   getStoredCart,
   saveStoredCart,
+  getStoredWishlist,
+  saveStoredWishlist,
   getAdminSession,
   clearAdminSession,
   resetToDefaults,
@@ -31,19 +24,72 @@ import {
   createOrderCloud,
   updateOrderStatusCloud,
 } from './lib/cloud';
-import { Sparkles, MessageCircle, Heart, ShieldCheck, CheckCircle2, Bot } from 'lucide-react';
+import { Sparkles, MessageCircle, Heart, ShieldCheck, CheckCircle2, Bot, Code2, Loader2 } from 'lucide-react';
+
+// Lazy Loaded Secondary Views & Modals to dramatically minimize initial bundle size
+const ProductDetailsPage = lazy(() =>
+  import('./components/ProductDetailsPage').then((m) => ({ default: m.ProductDetailsPage }))
+);
+const CheckoutPage = lazy(() =>
+  import('./components/CheckoutPage').then((m) => ({ default: m.CheckoutPage }))
+);
+const CustomerOrderTrackingPage = lazy(() =>
+  import('./components/CustomerOrderTrackingPage').then((m) => ({ default: m.CustomerOrderTrackingPage }))
+);
+const QuickViewModal = lazy(() =>
+  import('./components/QuickViewModal').then((m) => ({ default: m.QuickViewModal }))
+);
+const WishlistDrawer = lazy(() =>
+  import('./components/WishlistDrawer').then((m) => ({ default: m.WishlistDrawer }))
+);
+const AdminDeveloperAdvisor = lazy(() =>
+  import('./components/AdminDeveloperAdvisor').then((m) => ({ default: m.AdminDeveloperAdvisor }))
+);
+const AdminOrders = lazy(() =>
+  import('./components/AdminOrders').then((m) => ({ default: m.AdminOrders }))
+);
+const AdminProductForm = lazy(() =>
+  import('./components/AdminProductForm').then((m) => ({ default: m.AdminProductForm }))
+);
+const AdminProductList = lazy(() =>
+  import('./components/AdminProductList').then((m) => ({ default: m.AdminProductList }))
+);
+const AdminSettings = lazy(() =>
+  import('./components/AdminSettings').then((m) => ({ default: m.AdminSettings }))
+);
+const AdminLogin = lazy(() =>
+  import('./components/AdminLogin').then((m) => ({ default: m.AdminLogin }))
+);
+const SupabaseCodeModal = lazy(() =>
+  import('./components/SupabaseCodeModal').then((m) => ({ default: m.SupabaseCodeModal }))
+);
+const AdminCopilotModal = lazy(() =>
+  import('./components/AdminCopilotModal').then((m) => ({ default: m.AdminCopilotModal }))
+);
+
+// Loading Fallback Component
+const ViewLoadingFallback = () => (
+  <div className="flex flex-col items-center justify-center min-h-[60vh] py-16 px-4">
+    <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4 shadow-sm animate-spin">
+      <Loader2 className="w-6 h-6" />
+    </div>
+    <span className="text-xs font-bold text-stone-600 animate-pulse">جاري تحميل الصفحة...</span>
+  </div>
+);
 
 export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [settings, setSettings] = useState<StoreSettings>(getStoredSettings);
   const [cart, setCart] = useState<CartItem[]>(getStoredCart);
+  const [wishlist, setWishlist] = useState<string[]>(getStoredWishlist);
   const [adminUser, setAdminUser] = useState<AdminUser | null>(getAdminSession);
 
-  const [activeTab, setActiveTab] = useState<'store' | 'product-detail' | 'checkout' | 'orders' | 'admin'>('store');
+  const [activeTab, setActiveTab] = useState<'store' | 'product-detail' | 'checkout' | 'orders' | 'admin' | 'dev-advisor' | 'track-order'>('store');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isWishlistOpen, setIsWishlistOpen] = useState(false);
   const [isDocsOpen, setIsDocsOpen] = useState(false);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -77,7 +123,7 @@ export default function App() {
     loadData();
   }, []);
 
-  // Sync settings and cart
+  // Sync settings, cart, and wishlist
   useEffect(() => {
     saveStoredSettings(settings);
   }, [settings]);
@@ -85,6 +131,41 @@ export default function App() {
   useEffect(() => {
     saveStoredCart(cart);
   }, [cart]);
+
+  useEffect(() => {
+    saveStoredWishlist(wishlist);
+  }, [wishlist]);
+
+  // Wishlist Handlers
+  const handleToggleWishlist = (product: Product) => {
+    setWishlist((prev) => {
+      const exists = prev.includes(product.id);
+      if (exists) {
+        showToast(`تمت إزالة "${product.title_ar}" من المفضلة`, 'info');
+        return prev.filter((id) => id !== product.id);
+      } else {
+        showToast(`تمت إضافة "${product.title_ar}" للمفضلة ❤️`, 'success');
+        return [...prev, product.id];
+      }
+    });
+  };
+
+  const handleClearWishlist = () => {
+    setWishlist([]);
+    showToast('تم إفراغ قائمة المفضلة', 'info');
+  };
+
+  // Product Update Handler (e.g., when a review is added and rating recalculates)
+  const handleUpdateProduct = async (updatedProduct: Product) => {
+    setProducts((prev) =>
+      prev.map((p) => (p.id === updatedProduct.id ? updatedProduct : p))
+    );
+    if (selectedProduct && selectedProduct.id === updatedProduct.id) {
+      setSelectedProduct(updatedProduct);
+    }
+    await saveProductCloud(updatedProduct);
+    showToast('تم نشر التقييم وحساب المتوسط بنجاح! ⭐');
+  };
 
   // Open Full Product Details Page
   const handleOpenProductDetails = (product: Product) => {
@@ -211,9 +292,19 @@ export default function App() {
   }, 0);
 
   const cartProductIds = new Set(cart.map((i) => i.product.id));
+  const wishlistIdsSet = new Set(wishlist);
+  const wishlistProducts = products.filter((p) => wishlistIdsSet.has(p.id));
 
   return (
     <div className="min-h-screen bg-stone-50 flex flex-col justify-between selection:bg-rose-100 selection:text-rose-900 font-['Cairo',sans-serif]">
+      {/* Top Flash Sale Countdown Banner */}
+      <FlashSaleBanner
+        onExploreSale={() => {
+          setActiveTab('store');
+          window.scrollTo({ top: 400, behavior: 'smooth' });
+        }}
+      />
+
       {/* Toast Notification */}
       {toast && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 bg-stone-900 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs sm:text-sm font-bold border border-stone-800 animate-in fade-in slide-in-from-top-4 duration-300">
@@ -232,6 +323,8 @@ export default function App() {
         cartCount={totalCartCount}
         cartTotal={totalCartPrice}
         onOpenCart={() => setIsCartOpen(true)}
+        wishlistCount={wishlist.length}
+        onOpenWishlist={() => setIsWishlistOpen(true)}
         settings={settings}
         onOpenDocs={() => setIsDocsOpen(true)}
         ordersCount={orders.length}
@@ -245,8 +338,9 @@ export default function App() {
 
       {/* Main Views Container */}
       <main className="flex-1">
-        {/* Storefront View */}
-        {activeTab === 'store' && (
+        <Suspense fallback={<ViewLoadingFallback />}>
+          {/* Storefront View */}
+          {activeTab === 'store' && (
           <StoreFront
             products={products}
             categories={INITIAL_CATEGORIES}
@@ -254,6 +348,8 @@ export default function App() {
             onQuickView={(p) => setQuickViewProduct(p)}
             onOpenDetails={handleOpenProductDetails}
             cartProductIds={cartProductIds}
+            wishlistIds={wishlistIdsSet}
+            onToggleWishlist={handleToggleWishlist}
             settings={settings}
             onOpenAdmin={() => setActiveTab('admin')}
             searchQuery={searchQuery}
@@ -277,6 +373,9 @@ export default function App() {
             }}
             onSelectProduct={handleOpenProductDetails}
             settings={settings}
+            isWishlisted={wishlistIdsSet.has(selectedProduct.id)}
+            onToggleWishlist={handleToggleWishlist}
+            onUpdateProduct={handleUpdateProduct}
           />
         )}
 
@@ -303,6 +402,8 @@ export default function App() {
                 orders={orders}
                 onUpdateStatus={handleUpdateOrderStatus}
                 settings={settings}
+                onOpenDevAdvisor={() => setActiveTab('dev-advisor')}
+                onBackToAdmin={() => setActiveTab('admin')}
               />
             </div>
           ) : (
@@ -333,11 +434,18 @@ export default function App() {
 
                 <div className="flex flex-wrap items-center gap-2">
                   <button
+                    onClick={() => setActiveTab('dev-advisor')}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Code2 className="w-4 h-4 text-indigo-200" />
+                    <span>المستشار البرمجي (AI Coder)</span>
+                  </button>
+                  <button
                     onClick={() => setIsCopilotOpen(true)}
                     className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-bold px-3.5 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
                   >
                     <Bot className="w-4 h-4 text-rose-400" />
-                    <span>المساعد الذكي (AI Copilot)</span>
+                    <span>المساعد الإداري (Copilot)</span>
                   </button>
                   <button
                     onClick={() => setActiveTab('orders')}
@@ -385,6 +493,38 @@ export default function App() {
               onBackToStore={() => setActiveTab('store')}
             />
           ))}
+
+        {/* Dedicated Developer / Code Consultant View */}
+        {activeTab === 'dev-advisor' &&
+          (adminUser ? (
+            <AdminDeveloperAdvisor
+              settings={settings}
+              onBackToAdmin={() => setActiveTab('admin')}
+              onOpenStore={() => setActiveTab('store')}
+              onOpenOrders={() => setActiveTab('orders')}
+            />
+          ) : (
+            <AdminLogin
+              settings={settings}
+              onLoginSuccess={(user) => setAdminUser(user)}
+              onBackToStore={() => setActiveTab('store')}
+            />
+          ))}
+
+        {/* Customer Order Tracking View */}
+        {activeTab === 'track-order' && (
+          <CustomerOrderTrackingPage
+            orders={orders}
+            settings={settings}
+            onBackToStore={() => {
+              setActiveTab('store');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onAddToCart={handleAddToCart}
+            allProducts={products}
+          />
+        )}
+        </Suspense>
       </main>
 
       {/* Cart Drawer Slide-Over */}
@@ -404,25 +544,45 @@ export default function App() {
         }}
       />
 
-      {/* Quick View Modal */}
-      <QuickViewModal
-        product={quickViewProduct}
-        onClose={() => setQuickViewProduct(null)}
-        onAddToCart={handleAddToCart}
-        settings={settings}
-      />
+      <Suspense fallback={null}>
+        {/* Wishlist Drawer Slide-Over */}
+        {isWishlistOpen && (
+          <WishlistDrawer
+            isOpen={isWishlistOpen}
+            onClose={() => setIsWishlistOpen(false)}
+            wishlistProducts={wishlistProducts}
+            onRemoveFromWishlist={handleToggleWishlist}
+            onAddToCart={handleAddToCart}
+            onClearWishlist={handleClearWishlist}
+            onOpenDetails={handleOpenProductDetails}
+            settings={settings}
+          />
+        )}
 
-      {/* Supabase & Bolt Code Modal */}
-      <SupabaseCodeModal isOpen={isDocsOpen} onClose={() => setIsDocsOpen(false)} />
+        {/* Quick View Modal */}
+        {quickViewProduct && (
+          <QuickViewModal
+            product={quickViewProduct}
+            onClose={() => setQuickViewProduct(null)}
+            onAddToCart={handleAddToCart}
+            settings={settings}
+          />
+        )}
 
-      {/* AI Admin Copilot Modal */}
-      <AdminCopilotModal
-        isOpen={isCopilotOpen}
-        onClose={() => setIsCopilotOpen(false)}
-        products={products}
-        orders={orders}
-        settings={settings}
-      />
+        {/* Supabase & Bolt Code Modal */}
+        {isDocsOpen && <SupabaseCodeModal isOpen={isDocsOpen} onClose={() => setIsDocsOpen(false)} />}
+
+        {/* AI Admin Copilot Modal */}
+        {isCopilotOpen && (
+          <AdminCopilotModal
+            isOpen={isCopilotOpen}
+            onClose={() => setIsCopilotOpen(false)}
+            products={products}
+            orders={orders}
+            settings={settings}
+          />
+        )}
+      </Suspense>
 
       {/* Footer */}
       <footer className="bg-stone-900 text-stone-300 text-xs py-12 border-t border-stone-800 mt-16">

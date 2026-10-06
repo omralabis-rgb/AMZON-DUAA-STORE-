@@ -1,7 +1,8 @@
 import React from 'react';
-import { ShoppingBag, Eye, MessageCircle, Sparkles, Star, Check, ArrowUpRight } from 'lucide-react';
+import { ShoppingBag, Eye, MessageCircle, Sparkles, Check, ArrowUpRight, Heart } from 'lucide-react';
 import { Product, StoreSettings } from '../types';
 import { generateSingleProductWhatsAppUrl } from '../lib/whatsapp';
+import { StarRatingDisplay } from './StarRating';
 
 interface ProductCardProps {
   product: Product;
@@ -10,15 +11,19 @@ interface ProductCardProps {
   onOpenDetails: (product: Product) => void;
   settings: StoreSettings;
   isInCart?: boolean;
+  isWishlisted?: boolean;
+  onToggleWishlist?: (product: Product) => void;
 }
 
-export const ProductCard: React.FC<ProductCardProps> = ({
+const ProductCardComponent: React.FC<ProductCardProps> = ({
   product,
   onAddToCart,
   onQuickView,
   onOpenDetails,
   settings,
   isInCart,
+  isWishlisted = false,
+  onToggleWishlist,
 }) => {
   const hasDiscount = product.discount_price !== null && product.discount_price < product.original_price;
   const currentPrice = product.discount_price ?? product.original_price;
@@ -48,6 +53,25 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80';
           }}
         />
+
+        {/* Wishlist Heart Button */}
+        {onToggleWishlist && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleWishlist(product);
+            }}
+            title={isWishlisted ? 'إزالة من المفضلة' : 'إضافة للمفضلة'}
+            className={`absolute top-3 left-3 z-20 w-8 h-8 rounded-full flex items-center justify-center transition-all shadow-md cursor-pointer ${
+              isWishlisted
+                ? 'bg-rose-500 text-white shadow-rose-200 scale-105'
+                : 'bg-white/90 hover:bg-white text-stone-600 hover:text-rose-600 border border-stone-200'
+            }`}
+          >
+            <Heart className={`w-4 h-4 ${isWishlisted ? 'fill-white text-white' : ''}`} />
+          </button>
+        )}
 
         {/* Top Badges */}
         <div className="absolute top-3 right-3 left-3 flex items-center justify-between pointer-events-none">
@@ -112,11 +136,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <span className="text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-lg font-medium">
               {product.category_name}
             </span>
-            <div className="flex items-center gap-1 text-amber-500">
-              <Star className="w-3.5 h-3.5 fill-amber-400" />
-              <span className="font-bold text-stone-800 text-xs">{product.rating || '4.9'}</span>
-              <span className="text-stone-400 text-[11px]">({product.reviews_count || '25'})</span>
-            </div>
+            <StarRatingDisplay
+              rating={product.rating || 4.9}
+              reviewsCount={product.reviews_count || 12}
+              size="sm"
+            />
           </div>
 
           {/* Title */}
@@ -210,3 +234,5 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     </div>
   );
 };
+
+export const ProductCard = React.memo(ProductCardComponent);

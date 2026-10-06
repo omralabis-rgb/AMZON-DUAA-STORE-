@@ -242,7 +242,7 @@ export const ProductReviewsSection: React.FC<ProductReviewsSectionProps> = ({
                     rating={rating}
                     size="xl"
                     interactive={true}
-                    onChange={(newVal) => setRating(newVal)}
+                    onChange={(newVal: number) => setRating(newVal)}
                     showLabel={true}
                   />
                 </div>

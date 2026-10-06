@@ -55,6 +55,57 @@ ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Read Categories" ON public.categories FOR SELECT USING (true);
 CREATE POLICY "Public Read Products" ON public.products FOR SELECT USING (true);
 CREATE POLICY "Admin Write Products" ON public.products FOR ALL USING (auth.role() = 'authenticated');
+
+-- 🚀 Full-Text Search (tsvector) & Fuzzy Trigram Matching (pg_trgm)
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+ALTER TABLE public.products
+ADD COLUMN IF NOT EXISTS fts tsvector
+GENERATED ALWAYS AS (
+  to_tsvector('arabic',
+    coalesce(title_ar, '') || ' ' ||
+    coalesce(description_ar, '') || ' ' ||
+    coalesce(category_name, '') || ' ' ||
+    coalesce(array_to_string(tags, ' '), '')
+  )
+) STORED;
+
+CREATE INDEX IF NOT EXISTS products_fts_idx ON public.products USING gin(fts);
+CREATE INDEX IF NOT EXISTS products_title_trgm_idx ON public.products USING gin(title_ar gin_trgm_ops);
+
+-- RPC Function for Live Dynamic Fuzzy Search
+CREATE OR REPLACE FUNCTION public.search_products_fuzzy(
+  search_query TEXT,
+  similarity_threshold FLOAT DEFAULT 0.1,
+  max_results INT DEFAULT 20
+)
+RETURNS TABLE (
+  id UUID, title_ar TEXT, description_ar TEXT,
+  original_price NUMERIC, discount_price NUMERIC,
+  stock_quantity INT, category_id UUID, category_name TEXT,
+  tags TEXT[], image_url TEXT, ai_generated BOOLEAN,
+  rating NUMERIC, reviews_count INT, how_to_use TEXT,
+  ingredients TEXT, created_at TIMESTAMPTZ, featured BOOLEAN,
+  rank REAL, similarity_score FLOAT, matched_reason TEXT
+) LANGUAGE plpgsql STABLE AS $$
+BEGIN
+  RETURN QUERY
+  SELECT p.id, p.title_ar, p.description_ar, p.original_price, p.discount_price,
+         p.stock_quantity, p.category_id, p.category_name, p.tags, p.image_url,
+         p.ai_generated, p.rating, p.reviews_count, p.how_to_use, p.ingredients,
+         p.created_at, p.featured,
+         ts_rank(p.fts, websearch_to_tsquery('arabic', search_query)) AS rank,
+         similarity(p.title_ar, search_query)::FLOAT AS similarity_score,
+         'مطابقة ضبابية دقيقة' AS matched_reason
+  FROM public.products p
+  WHERE p.fts @@ websearch_to_tsquery('arabic', search_query)
+     OR similarity(p.title_ar, search_query) > similarity_threshold
+     OR p.title_ar ILIKE '%' || search_query || '%'
+  ORDER BY greatest(ts_rank(p.fts, websearch_to_tsquery('arabic', search_query)), similarity(p.title_ar, search_query)) DESC
+  LIMIT max_results;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION public.search_products_fuzzy(TEXT, FLOAT, INT) TO anon, authenticated;
 `;
 
   const edgeCode = `// 2️⃣ supabase/functions/generate-product-content/index.ts
@@ -76,9 +127,9 @@ serve(async (req) => {
     const { imageBase64, mimeType } = await req.json();
     const genAI = new GoogleGenerativeAI(apiKey);
     
-    // ملاحظة: يُفضل استخدام gemini-3.8-flash أو gemini-2.0-flash حسب توفر بيئة السيرفر
+    // نموذج Gemini الأحدث
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-3.8-flash",
       generationConfig: { 
         responseMimeType: "application/json", 
         temperature: 0.2 
