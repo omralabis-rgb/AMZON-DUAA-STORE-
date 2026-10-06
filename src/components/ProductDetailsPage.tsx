@@ -19,6 +19,8 @@ import {
   Minus,
   CheckCircle2,
   ThumbsUp,
+  Film,
+  Play,
 } from 'lucide-react';
 import { Product, StoreSettings, ProductReview } from '../types';
 import { generateSingleProductWhatsAppUrl } from '../lib/whatsapp';
@@ -54,6 +56,7 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
     : [product.image_url];
 
   const [activeImage, setActiveImage] = useState(images[0] || product.image_url);
+  const [showVideo, setShowVideo] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [activeTab, setActiveTab] = useState<'benefits' | 'ritual' | 'ingredients' | 'shipping'>('benefits');
   const [isAddedToast, setIsAddedToast] = useState(false);
@@ -168,13 +171,33 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
         
         {/* Left Column: Gallery & Thumbnails (5 cols) */}
         <div className="lg:col-span-5 space-y-4">
-          {/* Main Large Focal Image */}
+          {/* Main Large Focal Image or Video Teaser */}
           <div className="relative aspect-square rounded-3xl overflow-hidden bg-stone-100 border border-stone-200 shadow-md group">
-            <img
-              src={activeImage}
-              alt={product.title_ar}
-              className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
-            />
+            {showVideo && product.video_url ? (
+              <div className="w-full h-full bg-black relative flex items-center justify-center">
+                <video
+                  src={product.video_url}
+                  autoPlay
+                  loop
+                  playsInline
+                  controls
+                  className="w-full h-full object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowVideo(false)}
+                  className="absolute bottom-4 right-4 bg-stone-900/80 hover:bg-stone-900 text-white text-xs font-bold px-3 py-1.5 rounded-xl backdrop-blur-xs flex items-center gap-1.5 transition-colors cursor-pointer z-20"
+                >
+                  <span>عرض الصور</span>
+                </button>
+              </div>
+            ) : (
+              <img
+                src={activeImage}
+                alt={product.title_ar}
+                className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
+              />
+            )}
 
             {/* Badges Overlay */}
             <div className="absolute top-4 right-4 flex flex-col gap-2">
@@ -182,6 +205,16 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
                 <span className="bg-rose-600 text-white text-xs font-black px-3 py-1.5 rounded-full shadow-lg">
                   خصم {discountPercent}%
                 </span>
+              )}
+              {product.video_url && !showVideo && (
+                <button
+                  type="button"
+                  onClick={() => setShowVideo(true)}
+                  className="bg-rose-950/90 hover:bg-rose-900 text-rose-200 text-[11px] font-bold px-3 py-1 rounded-full shadow-md backdrop-blur-xs border border-rose-400/40 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5 text-rose-300 fill-rose-300" />
+                  <span>فيديو 5s</span>
+                </button>
               )}
               {product.badge && (
                 <span className="bg-stone-900/90 text-amber-300 text-[11px] font-bold px-3 py-1 rounded-full shadow-md backdrop-blur-xs border border-amber-300/30 flex items-center gap-1.5">
@@ -218,14 +251,31 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
           </div>
 
           {/* Thumbnails Row */}
-          {images.length > 1 && (
+          {(images.length > 1 || product.video_url) && (
             <div className="flex items-center gap-3 overflow-x-auto pb-2">
+              {product.video_url && (
+                <button
+                  onClick={() => setShowVideo(true)}
+                  className={`w-20 h-20 rounded-2xl overflow-hidden border-2 transition-all shrink-0 flex flex-col items-center justify-center gap-1 bg-rose-50 text-rose-700 cursor-pointer ${
+                    showVideo
+                      ? 'border-rose-600 ring-2 ring-rose-200'
+                      : 'border-stone-200 hover:border-rose-300'
+                  }`}
+                  title="مشاهدة مقطع 5 ثوانٍ"
+                >
+                  <Film className="w-6 h-6 text-rose-600" />
+                  <span className="text-[10px] font-black">فيديو 5s</span>
+                </button>
+              )}
               {images.map((img, idx) => (
                 <button
                   key={idx}
-                  onClick={() => setActiveImage(img)}
-                  className={`w-20 h-20 rounded-2xl overflow-hidden border-2 transition-all shrink-0 ${
-                    activeImage === img
+                  onClick={() => {
+                    setActiveImage(img);
+                    setShowVideo(false);
+                  }}
+                  className={`w-20 h-20 rounded-2xl overflow-hidden border-2 transition-all shrink-0 cursor-pointer ${
+                    !showVideo && activeImage === img
                       ? 'border-rose-600 ring-2 ring-rose-200'
                       : 'border-stone-200 opacity-70 hover:opacity-100'
                   }`}
@@ -756,3 +806,5 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
     </div>
   );
 };
+
+export default ProductDetailsPage;

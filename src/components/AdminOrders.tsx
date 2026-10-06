@@ -387,3 +387,5 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({
     </div>
   );
 };
+
+export default AdminOrders;

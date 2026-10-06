@@ -329,3 +329,5 @@ NEXT_PUBLIC_WHATSAPP_NUMBER=966500000000
     </div>
   );
 };
+
+export default SupabaseCodeModal;

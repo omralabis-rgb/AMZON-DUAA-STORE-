@@ -213,3 +213,5 @@ export const QuickViewModal: React.FC<QuickViewModalProps> = ({
     </div>
   );
 };
+
+export default QuickViewModal;

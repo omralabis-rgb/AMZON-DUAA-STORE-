@@ -111,3 +111,5 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
     </div>
   );
 };
+
+export default AdminLogin;

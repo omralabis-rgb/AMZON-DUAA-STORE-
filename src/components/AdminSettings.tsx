@@ -165,3 +165,5 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
     </div>
   );
 };
+
+export default AdminSettings;

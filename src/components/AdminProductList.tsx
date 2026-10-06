@@ -234,3 +234,5 @@ export const AdminProductList: React.FC<AdminProductListProps> = ({
     </div>
   );
 };
+
+export default AdminProductList;

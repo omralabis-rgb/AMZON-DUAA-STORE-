@@ -258,3 +258,5 @@ export const AdminCopilotModal: React.FC<AdminCopilotModalProps> = ({
     </div>
   );
 };
+
+export default AdminCopilotModal;

@@ -622,3 +622,5 @@ export const AdminDeveloperAdvisor: React.FC<AdminDeveloperAdvisorProps> = ({
     </div>
   );
 };
+
+export default AdminDeveloperAdvisor;

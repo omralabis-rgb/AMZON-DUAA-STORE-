@@ -627,3 +627,5 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
     </div>
   );
 };
+
+export default CheckoutPage;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShoppingBag, Eye, MessageCircle, Sparkles, Check, ArrowUpRight, Heart } from 'lucide-react';
+import { ShoppingBag, Eye, MessageCircle, Sparkles, Check, ArrowUpRight, Heart, Film } from 'lucide-react';
 import { Product, StoreSettings } from '../types';
 import { generateSingleProductWhatsAppUrl } from '../lib/whatsapp';
 import { StarRatingDisplay } from './StarRating';
@@ -79,6 +79,12 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
             {hasDiscount && (
               <span className="bg-rose-600 text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-md backdrop-blur-xs">
                 خصم {discountPercent}%
+              </span>
+            )}
+            {product.video_url && (
+              <span className="bg-rose-950/90 text-rose-200 text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs border border-rose-400/40">
+                <Film className="w-3 h-3 text-rose-300" />
+                فيديو 5s
               </span>
             )}
             {product.badge ? (

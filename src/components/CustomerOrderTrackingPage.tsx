@@ -642,3 +642,4 @@ export const CustomerOrderTrackingPage: React.FC<CustomerOrderTrackingPageProps>
 
 export const TrackOrderPage = CustomerOrderTrackingPage;
 export const CustomerOrderHistory = CustomerOrderTrackingPage;
+export default CustomerOrderTrackingPage;

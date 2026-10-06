@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { Navbar } from './components/Navbar';
 import { StoreFront } from './components/StoreFront';
 import { CartDrawer } from './components/CartDrawer';
@@ -24,48 +24,44 @@ import {
   createOrderCloud,
   updateOrderStatusCloud,
 } from './lib/cloud';
+import {
+  fetchProductsFirestore,
+  saveProductFirestore,
+  deleteProductFirestore,
+  fetchOrdersFirestore,
+  createOrderFirestore,
+  updateOrderStatusFirestore,
+  subscribeToCartFirestore,
+  saveCartItemFirestore,
+  removeCartItemFirestore,
+  clearCartFirestore,
+  mergeCartOnLogin,
+  fetchWishlistFirestore,
+  addWishlistFirestore,
+  removeWishlistFirestore,
+  subscribeToAuthState,
+  logoutFirebase,
+} from './lib/firebase';
+import { AuthModal } from './components/AuthModal';
+import { UserProfile } from './types';
 import { Sparkles, MessageCircle, Heart, ShieldCheck, CheckCircle2, Bot, Code2, Loader2 } from 'lucide-react';
 
-// Lazy Loaded Secondary Views & Modals to dramatically minimize initial bundle size
-const ProductDetailsPage = lazy(() =>
-  import('./components/ProductDetailsPage').then((m) => ({ default: m.ProductDetailsPage }))
-);
-const CheckoutPage = lazy(() =>
-  import('./components/CheckoutPage').then((m) => ({ default: m.CheckoutPage }))
-);
-const CustomerOrderTrackingPage = lazy(() =>
-  import('./components/CustomerOrderTrackingPage').then((m) => ({ default: m.CustomerOrderTrackingPage }))
-);
-const QuickViewModal = lazy(() =>
-  import('./components/QuickViewModal').then((m) => ({ default: m.QuickViewModal }))
-);
-const WishlistDrawer = lazy(() =>
-  import('./components/WishlistDrawer').then((m) => ({ default: m.WishlistDrawer }))
-);
-const AdminDeveloperAdvisor = lazy(() =>
-  import('./components/AdminDeveloperAdvisor').then((m) => ({ default: m.AdminDeveloperAdvisor }))
-);
-const AdminOrders = lazy(() =>
-  import('./components/AdminOrders').then((m) => ({ default: m.AdminOrders }))
-);
-const AdminProductForm = lazy(() =>
-  import('./components/AdminProductForm').then((m) => ({ default: m.AdminProductForm }))
-);
-const AdminProductList = lazy(() =>
-  import('./components/AdminProductList').then((m) => ({ default: m.AdminProductList }))
-);
-const AdminSettings = lazy(() =>
-  import('./components/AdminSettings').then((m) => ({ default: m.AdminSettings }))
-);
-const AdminLogin = lazy(() =>
-  import('./components/AdminLogin').then((m) => ({ default: m.AdminLogin }))
-);
-const SupabaseCodeModal = lazy(() =>
-  import('./components/SupabaseCodeModal').then((m) => ({ default: m.SupabaseCodeModal }))
-);
-const AdminCopilotModal = lazy(() =>
-  import('./components/AdminCopilotModal').then((m) => ({ default: m.AdminCopilotModal }))
-);
+// Consolidated Lazy Imports with Resilient Suspense & Production Chunk Handlers
+import {
+  ProductDetailsPage,
+  CheckoutPage,
+  CustomerOrderTrackingPage,
+  QuickViewModal,
+  WishlistDrawer,
+  AdminDeveloperAdvisor,
+  AdminOrders,
+  AdminProductForm,
+  AdminProductList,
+  AdminSettings,
+  AdminLogin,
+  SupabaseCodeModal,
+  AdminCopilotModal,
+} from './lib/lazyImports';
 
 // Loading Fallback Component
 const ViewLoadingFallback = () => (
@@ -84,6 +80,18 @@ export default function App() {
   const [cart, setCart] = useState<CartItem[]>(getStoredCart);
   const [wishlist, setWishlist] = useState<string[]>(getStoredWishlist);
   const [adminUser, setAdminUser] = useState<AdminUser | null>(getAdminSession);
+
+  // Firebase User & Auth State
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  // References for Real-Time Cart Listener and Guest Cart Merging
+  const cartUnsubscribeRef = useRef<(() => void) | null>(null);
+  const guestCartRef = useRef<CartItem[]>(cart);
+
+  useEffect(() => {
+    guestCartRef.current = cart;
+  }, [cart]);
 
   const [activeTab, setActiveTab] = useState<'store' | 'product-detail' | 'checkout' | 'orders' | 'admin' | 'dev-advisor' | 'track-order'>('store');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -111,26 +119,107 @@ export default function App() {
     }, 3000);
   };
 
-  // Initial load from cloud/local
+  // Initial load from Firebase Firestore with cloud/local fallback
   useEffect(() => {
     async function loadData() {
-      const pResult = await fetchProductsCloud();
-      setProducts(pResult.products);
+      // 1. Products: Fetch from Firebase Firestore
+      const fsResult = await fetchProductsFirestore();
+      if (fsResult.products && fsResult.products.length > 0) {
+        setProducts(fsResult.products);
+      } else {
+        const pResult = await fetchProductsCloud();
+        setProducts(pResult.products);
+      }
 
-      const oResult = await fetchOrdersCloud();
-      setOrders(oResult.orders);
+      // 2. Orders: Fetch from Firebase Firestore
+      const oResult = await fetchOrdersFirestore();
+      if (oResult.orders && oResult.orders.length > 0) {
+        setOrders(oResult.orders);
+      } else {
+        const oCloud = await fetchOrdersCloud();
+        setOrders(oCloud.orders);
+      }
     }
     loadData();
   }, []);
 
-  // Sync settings, cart, and wishlist
+  // Listen to Firebase Authentication State & Real-Time Cart Listener Lifecycle
+  useEffect(() => {
+    const unsubscribeAuth = subscribeToAuthState(async (fbUser, profile) => {
+      if (!fbUser || !profile) {
+        // Safe Cleanup: User logged out -> terminate old cart listener immediately
+        if (cartUnsubscribeRef.current) {
+          cartUnsubscribeRef.current();
+          cartUnsubscribeRef.current = null;
+        }
+        setCurrentUser(null);
+        return;
+      }
+
+      // User logged in:
+      setCurrentUser(profile);
+
+      if (profile.role === 'admin') {
+        const adminSession: AdminUser = {
+          id: profile.uid,
+          username: profile.name || 'مدير المتجر',
+          displayName: profile.name || 'مدير المتجر',
+          role: 'superadmin',
+        };
+        setAdminUser(adminSession);
+      }
+
+      // Clean up previous listener to prevent duplicate listeners or race conditions
+      if (cartUnsubscribeRef.current) {
+        cartUnsubscribeRef.current();
+        cartUnsubscribeRef.current = null;
+      }
+
+      // Safe Merge on Login: Transfer guest items to Firestore without loss or duplication
+      const currentGuestItems = guestCartRef.current;
+      if (currentGuestItems && currentGuestItems.length > 0) {
+        try {
+          await mergeCartOnLogin(profile.uid, currentGuestItems, products);
+        } catch (e) {
+          console.warn('[Cart Merge] Error merging guest items on login:', e);
+        }
+      }
+
+      // Start Real-Time Firestore onSnapshot Cart Listener across devices
+      const unsubscribeCart = subscribeToCartFirestore(
+        profile.uid,
+        products,
+        (serverCartItems) => {
+          setCart(serverCartItems);
+          saveStoredCart(serverCartItems);
+        }
+      );
+      cartUnsubscribeRef.current = unsubscribeCart;
+
+      // Sync Wishlist from Firestore
+      try {
+        const fsFavs = await fetchWishlistFirestore(profile.uid);
+        if (fsFavs && fsFavs.length > 0) {
+          setWishlist((prev) => Array.from(new Set([...prev, ...fsFavs])));
+        }
+      } catch (e) {
+        console.warn('Error loading wishlist from Firestore:', e);
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+      if (cartUnsubscribeRef.current) {
+        cartUnsubscribeRef.current();
+        cartUnsubscribeRef.current = null;
+      }
+    };
+  }, [products]);
+
+  // Sync settings and wishlist locally
   useEffect(() => {
     saveStoredSettings(settings);
   }, [settings]);
-
-  useEffect(() => {
-    saveStoredCart(cart);
-  }, [cart]);
 
   useEffect(() => {
     saveStoredWishlist(wishlist);
@@ -142,9 +231,15 @@ export default function App() {
       const exists = prev.includes(product.id);
       if (exists) {
         showToast(`تمت إزالة "${product.title_ar}" من المفضلة`, 'info');
+        if (currentUser?.uid) {
+          removeWishlistFirestore(currentUser.uid, product.id);
+        }
         return prev.filter((id) => id !== product.id);
       } else {
         showToast(`تمت إضافة "${product.title_ar}" للمفضلة ❤️`, 'success');
+        if (currentUser?.uid) {
+          addWishlistFirestore(currentUser.uid, product);
+        }
         return [...prev, product.id];
       }
     });
@@ -164,6 +259,7 @@ export default function App() {
       setSelectedProduct(updatedProduct);
     }
     await saveProductCloud(updatedProduct);
+    await saveProductFirestore(updatedProduct);
     showToast('تم نشر التقييم وحساب المتوسط بنجاح! ⭐');
   };
 
@@ -178,59 +274,106 @@ export default function App() {
   const handleAddToCart = (product: Product, quantity: number = 1) => {
     setCart((prev) => {
       const existing = prev.find((item) => item.product.id === product.id);
-      if (existing) {
-        return prev.map((item) =>
-          item.product.id === product.id ? { ...item, quantity: item.quantity + quantity } : item
-        );
+      const newQty = existing ? existing.quantity + quantity : quantity;
+      const updated = existing
+        ? prev.map((item) => (item.product.id === product.id ? { ...item, quantity: newQty } : item))
+        : [...prev, { product, quantity }];
+
+      if (currentUser?.uid) {
+        saveCartItemFirestore(currentUser.uid, { product, quantity: newQty });
+      } else {
+        saveStoredCart(updated);
       }
-      return [...prev, { product, quantity }];
+      return updated;
     });
     showToast(`تمت إضافة "${product.title_ar}" (${quantity}) إلى السلة`);
   };
 
   const handleUpdateQuantity = (productId: string, delta: number) => {
-    setCart((prev) =>
-      prev
+    setCart((prev) => {
+      const target = prev.find((item) => item.product.id === productId);
+      if (!target) return prev;
+      const newQty = target.quantity + delta;
+      const updated = prev
         .map((item) => {
           if (item.product.id === productId) {
-            const newQty = item.quantity + delta;
             return newQty > 0 ? { ...item, quantity: newQty } : null;
           }
           return item;
         })
-        .filter(Boolean) as CartItem[]
-    );
+        .filter(Boolean) as CartItem[];
+
+      if (currentUser?.uid) {
+        if (newQty > 0) {
+          saveCartItemFirestore(currentUser.uid, { product: target.product, quantity: newQty });
+        } else {
+          removeCartItemFirestore(currentUser.uid, productId);
+        }
+      } else {
+        saveStoredCart(updated);
+      }
+      return updated;
+    });
   };
 
   const handleRemoveItem = (productId: string) => {
-    setCart((prev) => prev.filter((item) => item.product.id !== productId));
+    setCart((prev) => {
+      const updated = prev.filter((item) => item.product.id !== productId);
+      if (currentUser?.uid) {
+        removeCartItemFirestore(currentUser.uid, productId);
+      } else {
+        saveStoredCart(updated);
+      }
+      return updated;
+    });
     showToast('تمت إزالة المنتج من السلة', 'info');
   };
 
   const handleClearCart = () => {
     setCart([]);
+    if (currentUser?.uid) {
+      clearCartFirestore(currentUser.uid);
+    } else {
+      saveStoredCart([]);
+    }
     showToast('تم إفراغ السلة بالكامل', 'info');
   };
 
   // When order is placed from CartDrawer or CheckoutPage
   const handleOrderPlaced = async (newOrder: Order) => {
-    setOrders((prev) => [newOrder, ...prev]);
-    await createOrderCloud(newOrder);
+    const finalOrder: Order = {
+      ...newOrder,
+      userId: currentUser?.uid || 'guest',
+    };
+    setOrders((prev) => [finalOrder, ...prev]);
+    await createOrderCloud(finalOrder);
+    await createOrderFirestore(finalOrder, currentUser?.uid);
     setCart([]);
-    showToast(`تم تسجيل وتأكيد طلبكِ بنجاح #${newOrder.order_number}`);
+    showToast(`تم تسجيل وتأكيد طلبكِ بنجاح #${finalOrder.order_number}`);
   };
 
   // Product Admin Handlers
   const handleProductCreated = async (newProduct: Product) => {
     setProducts((prev) => [newProduct, ...prev]);
     await saveProductCloud(newProduct);
+    await saveProductFirestore(newProduct);
     showToast(`تم نشر منتج "${newProduct.title_ar}" بنجاح في المتجر!`);
+  };
+
+  const handleProductsCreated = async (newProducts: Product[]) => {
+    setProducts((prev) => [...newProducts, ...prev]);
+    for (const p of newProducts) {
+      saveProductCloud(p);
+      saveProductFirestore(p);
+    }
+    showToast(`تم نشر ${newProducts.length} منتجات بنجاح في المتجر دفعة واحدة!`);
   };
 
   const handleDeleteProduct = async (productId: string) => {
     setProducts((prev) => prev.filter((p) => p.id !== productId));
     setCart((prev) => prev.filter((item) => item.product.id !== productId));
     await deleteProductCloud(productId);
+    await deleteProductFirestore(productId);
     showToast('تم حذف المنتج بنجاح', 'info');
   };
 
@@ -240,6 +383,7 @@ export default function App() {
         if (p.id === productId) {
           const updated = { ...p, stock_quantity: newStock };
           saveProductCloud(updated);
+          saveProductFirestore(updated);
           return updated;
         }
         return p;
@@ -253,6 +397,7 @@ export default function App() {
         if (p.id === productId) {
           const updated = { ...p, featured: !p.featured };
           saveProductCloud(updated);
+          saveProductFirestore(updated);
           return updated;
         }
         return p;
@@ -265,7 +410,27 @@ export default function App() {
   const handleUpdateOrderStatus = async (orderId: string, status: OrderStatus) => {
     setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status } : o)));
     await updateOrderStatusCloud(orderId, status);
+    await updateOrderStatusFirestore(orderId, status);
     showToast('تم تحديث حالة الطلب بنجاح');
+  };
+
+  // User Logout Handler
+  const handleLogoutUser = async () => {
+    // 1. Immediately terminate and clean up cart onSnapshot listener
+    if (cartUnsubscribeRef.current) {
+      cartUnsubscribeRef.current();
+      cartUnsubscribeRef.current = null;
+    }
+    // 2. Sign out from Firebase Authentication
+    await logoutFirebase();
+    // 3. Reset user and admin session
+    setCurrentUser(null);
+    clearAdminSession();
+    setAdminUser(null);
+    // 4. Clear user cart from React state and localStorage
+    setCart([]);
+    saveStoredCart([]);
+    showToast('تم تسجيل الخروج بنجاح', 'info');
   };
 
   const handleSaveSettings = (newSettings: StoreSettings) => {
@@ -334,6 +499,9 @@ export default function App() {
         onSelectProduct={handleOpenProductDetails}
         onAddToCart={handleAddToCart}
         onSearchSubmit={handleNavbarSearch}
+        currentUser={currentUser}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
+        onLogoutUser={handleLogoutUser}
       />
 
       {/* Main Views Container */}
@@ -396,7 +564,7 @@ export default function App() {
 
         {/* Orders View */}
         {activeTab === 'orders' &&
-          (adminUser ? (
+          (adminUser || currentUser?.role === 'admin' ? (
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
               <AdminOrders
                 orders={orders}
@@ -407,10 +575,15 @@ export default function App() {
               />
             </div>
           ) : (
-            <AdminLogin
+            <CustomerOrderTrackingPage
+              orders={orders}
               settings={settings}
-              onLoginSuccess={(user) => setAdminUser(user)}
-              onBackToStore={() => setActiveTab('store')}
+              onBackToStore={() => {
+                setActiveTab('store');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              onAddToCart={handleAddToCart}
+              allProducts={products}
             />
           ))}
 
@@ -466,6 +639,7 @@ export default function App() {
               <AdminProductForm
                 categories={INITIAL_CATEGORIES}
                 onProductCreated={handleProductCreated}
+                onProductsCreated={handleProductsCreated}
                 settings={settings}
               />
 
@@ -489,7 +663,7 @@ export default function App() {
           ) : (
             <AdminLogin
               settings={settings}
-              onLoginSuccess={(user) => setAdminUser(user)}
+              onLoginSuccess={(user: AdminUser) => setAdminUser(user)}
               onBackToStore={() => setActiveTab('store')}
             />
           ))}
@@ -506,7 +680,7 @@ export default function App() {
           ) : (
             <AdminLogin
               settings={settings}
-              onLoginSuccess={(user) => setAdminUser(user)}
+              onLoginSuccess={(user: AdminUser) => setAdminUser(user)}
               onBackToStore={() => setActiveTab('store')}
             />
           ))}
@@ -583,6 +757,16 @@ export default function App() {
           />
         )}
       </Suspense>
+
+      {/* Firebase Authentication Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onAuthSuccess={(profile) => {
+          setCurrentUser(profile);
+          showToast(`أهلاً بك يا ${profile.name || 'عزيزنا'}! تم تسجيل الدخول بنجاح ✨`);
+        }}
+      />
 
       {/* Footer */}
       <footer className="bg-stone-900 text-stone-300 text-xs py-12 border-t border-stone-800 mt-16">

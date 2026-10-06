@@ -31,6 +31,8 @@ export interface Product {
   tags: string[];
   image_url: string;
   gallery_images?: string[];
+  video_url?: string;
+  video_duration?: number;
   size_or_volume?: string;
   skin_type?: string;
   key_benefits?: string[];
@@ -85,6 +87,7 @@ export interface OrderItem {
 export interface Order {
   id: string;
   order_number: string;
+  userId?: string;
   customer_name: string;
   customer_phone: string;
   city: string;
@@ -101,6 +104,16 @@ export interface Order {
   delivery_speed?: string;
   created_at: string;
   updated_at?: string;
+}
+
+export interface UserProfile {
+  uid: string;
+  name: string;
+  email: string;
+  photoURL?: string;
+  role: 'user' | 'admin';
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface AdminUser {
