@@ -25,6 +25,7 @@ import {
 import { Product, StoreSettings, ProductReview } from '../types';
 import { generateSingleProductWhatsAppUrl } from '../lib/whatsapp';
 import { StarRatingDisplay, StarRatingInput } from './StarRating';
+import { getSafeImageSrc, getNonEmptySrc, handleProductImageError } from '../lib/image';
 
 interface ProductDetailsPageProps {
   product: Product;
@@ -51,11 +52,14 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
   onToggleWishlist,
   onUpdateProduct,
 }) => {
-  const images = product.gallery_images && product.gallery_images.length > 0
-    ? [product.image_url, ...product.gallery_images.filter((img) => img !== product.image_url)]
-    : [product.image_url];
+  const primaryImage = getSafeImageSrc(product.image_url);
+  const images =
+    product.gallery_images && product.gallery_images.length > 0
+      ? Array.from(new Set([primaryImage, ...product.gallery_images.map((img) => getSafeImageSrc(img))]))
+      : [primaryImage];
 
-  const [activeImage, setActiveImage] = useState(images[0] || product.image_url);
+  const [activeImage, setActiveImage] = useState(images[0]);
+  const safeVideoUrl = getNonEmptySrc(product.video_url);
   const [showVideo, setShowVideo] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [activeTab, setActiveTab] = useState<'benefits' | 'ritual' | 'ingredients' | 'shipping'>('benefits');
@@ -173,10 +177,10 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
         <div className="lg:col-span-5 space-y-4">
           {/* Main Large Focal Image or Video Teaser */}
           <div className="relative aspect-square rounded-3xl overflow-hidden bg-stone-100 border border-stone-200 shadow-md group">
-            {showVideo && product.video_url ? (
+            {showVideo && safeVideoUrl ? (
               <div className="w-full h-full bg-black relative flex items-center justify-center">
                 <video
-                  src={product.video_url}
+                  src={safeVideoUrl}
                   autoPlay
                   loop
                   playsInline
@@ -193,9 +197,10 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
               </div>
             ) : (
               <img
-                src={activeImage}
+                src={getSafeImageSrc(activeImage)}
                 alt={product.title_ar}
                 className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
+                onError={handleProductImageError}
               />
             )}
 
@@ -280,7 +285,7 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
                       : 'border-stone-200 opacity-70 hover:opacity-100'
                   }`}
                 >
-                  <img src={img} alt="Thumbnail" className="w-full h-full object-cover" />
+                  <img src={getSafeImageSrc(img)} alt="Thumbnail" className="w-full h-full object-cover" onError={handleProductImageError} />
                 </button>
               ))}
             </div>
@@ -573,9 +578,10 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
               {/* Product 1 (Current) */}
               <div className="bg-white/10 p-4 rounded-2xl border border-white/10 flex items-center gap-3">
                 <img
-                  src={product.image_url}
+                  src={getSafeImageSrc(product.image_url)}
                   alt={product.title_ar}
                   className="w-16 h-16 rounded-xl object-cover shrink-0"
+                  onError={handleProductImageError}
                 />
                 <div className="text-xs">
                   <span className="text-rose-300 font-bold text-[10px] block">المنتج الحالي</span>
@@ -594,9 +600,10 @@ export const ProductDetailsPage: React.FC<ProductDetailsPageProps> = ({
                     className="bg-white/10 hover:bg-white/20 p-4 rounded-2xl border border-white/10 flex items-center gap-3 cursor-pointer transition-all"
                   >
                     <img
-                      src={cp.image_url}
+                      src={getSafeImageSrc(cp.image_url)}
                       alt={cp.title_ar}
                       className="w-16 h-16 rounded-xl object-cover shrink-0"
+                      onError={handleProductImageError}
                     />
                     <div className="text-xs">
                       <span className="text-amber-300 font-bold text-[10px] block">منتج مكمل موصى به</span>

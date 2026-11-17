@@ -29,6 +29,7 @@ import firebaseConfig from '../../firebase-applet-config.json';
 import { Product, CartItem, Order, OrderStatus, UserProfile } from '../types';
 import { INITIAL_PRODUCTS } from '../data/initialData';
 import { getStoredProducts, saveStoredProducts, getStoredOrders, saveStoredOrders } from './storage';
+import { getSafeImageSrc, getNonEmptySrc } from './image';
 
 // =========================================================================
 // 1. FIREBASE SINGLETON INITIALIZATION WITH EXACT PROJECT CONFIGURATION
@@ -257,7 +258,7 @@ export function subscribeToCartFirestore(
           category_id: 'skincare',
           category_name: 'عناية',
           tags: [],
-          image_url: d.image_url || '',
+          image_url: getSafeImageSrc(d.image_url),
           ai_generated: false,
           created_at: new Date().toISOString(),
         };
@@ -299,7 +300,7 @@ export async function fetchCartFirestore(userId: string, allProducts: Product[])
         category_id: 'skincare',
         category_name: 'عناية',
         tags: [],
-        image_url: d.image_url || '',
+        image_url: getSafeImageSrc(d.image_url),
         ai_generated: false,
         created_at: new Date().toISOString(),
       };
@@ -484,19 +485,29 @@ export async function fetchProductsFirestore(): Promise<{ products: Product[]; i
     const items: Product[] = [];
     snap.forEach((docItem) => {
       const d = docItem.data();
+      const rawImage =
+        (typeof d.image_url === 'string' && d.image_url.trim()) ||
+        (Array.isArray(d.images) && typeof d.images[0] === 'string' ? d.images[0].trim() : '') ||
+        '';
+      const rawGallery = Array.isArray(d.gallery_images)
+        ? d.gallery_images
+            .map((img: unknown) => (typeof img === 'string' ? getSafeImageSrc(img) : ''))
+            .filter(Boolean)
+        : undefined;
+
       items.push({
         id: docItem.id,
-        title_ar: d.title_ar || 'منتج غير مسمى',
-        description_ar: d.description_ar || '',
-        original_price: Number(d.original_price || 0),
+        title_ar: d.title_ar || d.name || 'منتج غير مسمى',
+        description_ar: d.description_ar || d.description || '',
+        original_price: Number(d.original_price ?? d.price ?? 0) || 0,
         discount_price: d.discount_price !== undefined && d.discount_price !== null ? Number(d.discount_price) : null,
-        stock_quantity: Number(d.stock_quantity ?? 10),
+        stock_quantity: Number(d.stock_quantity ?? d.stock ?? 10),
         category_id: d.category_id || 'skincare',
-        category_name: d.category_name || 'عناية بالبشرة',
+        category_name: d.category_name || d.category || 'عناية بالبشرة',
         tags: Array.isArray(d.tags) ? d.tags : [],
-        image_url: d.image_url || '',
-        gallery_images: Array.isArray(d.gallery_images) ? d.gallery_images : undefined,
-        video_url: d.video_url || undefined,
+        image_url: getSafeImageSrc(rawImage),
+        gallery_images: rawGallery && rawGallery.length > 0 ? rawGallery : undefined,
+        video_url: getNonEmptySrc(d.video_url) || undefined,
         video_duration: d.video_duration || undefined,
         size_or_volume: d.size_or_volume || undefined,
         skin_type: d.skin_type || undefined,

@@ -1,5 +1,6 @@
 import { Product, StoreSettings, CartItem, Order, AdminUser } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_SETTINGS } from '../data/initialData';
+import { getSafeImageSrc } from './image';
 
 const PRODUCTS_KEY = 'elen_beauty_products_v1';
 const SETTINGS_KEY = 'elen_beauty_settings_v1';
@@ -32,7 +33,11 @@ export function getStoredProducts(): Product[] {
     const raw = localStorage.getItem(PRODUCTS_KEY);
     if (!raw) return INITIAL_PRODUCTS;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_PRODUCTS;
+    if (!Array.isArray(parsed) || parsed.length === 0) return INITIAL_PRODUCTS;
+    return parsed.map((p: Product) => ({
+      ...p,
+      image_url: getSafeImageSrc(p?.image_url),
+    }));
   } catch (e) {
     console.error('Error loading products from storage:', e);
     return INITIAL_PRODUCTS;

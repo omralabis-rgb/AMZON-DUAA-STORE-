@@ -271,8 +271,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                   title="حسابي"
                 >
                   <div className="w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
-                    {currentUser.photoURL ? (
-                      <img src={currentUser.photoURL} alt="" className="w-6 h-6 rounded-full object-cover" />
+                    {currentUser.photoURL?.trim() ? (
+                      <img src={currentUser.photoURL.trim()} alt="" className="w-6 h-6 rounded-full object-cover" />
                     ) : (
                       (currentUser.name || currentUser.email || 'U').charAt(0).toUpperCase()
                     )}

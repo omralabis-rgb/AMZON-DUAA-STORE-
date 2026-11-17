@@ -25,6 +25,7 @@ import {
 import { Category, Product, StoreSettings } from '../types';
 import { SAMPLE_AI_PRESETS } from '../data/initialData';
 import { AIVideoStudio } from './AIVideoStudio';
+import { getSafeImageSrc, getNonEmptySrc, handleProductImageError } from '../lib/image';
 
 export interface BatchProductItem {
   id: string;
@@ -909,9 +910,10 @@ export const AdminProductForm: React.FC<AdminProductFormProps> = ({
                     <div className="flex gap-3 items-start">
                       <div className="relative shrink-0">
                         <img
-                          src={item.previewUrl}
+                          src={getSafeImageSrc(item.previewUrl)}
                           alt={item.fileName}
                           className="w-16 h-16 rounded-xl object-cover border border-stone-200 shadow-xs"
+                          onError={handleProductImageError}
                         />
                         {item.status === 'saved' && (
                           <div className="absolute -top-1.5 -right-1.5 bg-teal-600 text-white rounded-full p-0.5 shadow-sm" title="تم النشر بالمتجر">
@@ -1079,10 +1081,10 @@ export const AdminProductForm: React.FC<AdminProductFormProps> = ({
               />
 
               <label htmlFor="product-single-image-upload" className="cursor-pointer block">
-                {singleImagePreview ? (
+                {getNonEmptySrc(singleImagePreview) ? (
                   <div className="flex flex-col items-center">
                     <img
-                      src={singleImagePreview}
+                      src={getNonEmptySrc(singleImagePreview) || undefined}
                       alt="Preview"
                       className="max-h-52 rounded-2xl object-cover shadow-md mx-auto border border-stone-200"
                     />
@@ -1241,9 +1243,10 @@ export const AdminProductForm: React.FC<AdminProductFormProps> = ({
             <div className="space-y-4 text-xs">
               <div className="flex items-center gap-4 bg-stone-50 p-3 rounded-2xl border border-stone-200">
                 <img
-                  src={selectedEditItem.previewUrl}
+                  src={getSafeImageSrc(selectedEditItem.previewUrl)}
                   alt={selectedEditItem.title_ar}
                   className="w-16 h-16 rounded-xl object-cover border border-stone-200"
+                  onError={handleProductImageError}
                 />
                 <div>
                   <span className="font-bold text-stone-800 block text-sm">{selectedEditItem.title_ar}</span>

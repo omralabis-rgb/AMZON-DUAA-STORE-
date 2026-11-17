@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { CartItem, CustomerOrderInfo, StoreSettings, Order } from '../types';
 import { buildWhatsAppMessage, generateWhatsAppOrderUrl } from '../lib/whatsapp';
+import { getSafeImageSrc, handleProductImageError } from '../lib/image';
 
 interface CheckoutPageProps {
   cartItems: CartItem[];
@@ -498,9 +499,10 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                   <div key={item.product.id} className="py-3 flex gap-3 items-center justify-between">
                     <div className="flex items-center gap-3">
                       <img
-                        src={item.product.image_url}
+                        src={getSafeImageSrc(item.product.image_url)}
                         alt={item.product.title_ar}
                         className="w-14 h-14 rounded-xl object-cover border border-stone-200 shrink-0"
+                        onError={handleProductImageError}
                       />
                       <div>
                         <h4 className="text-xs font-bold text-stone-900 line-clamp-1 max-w-[180px]">

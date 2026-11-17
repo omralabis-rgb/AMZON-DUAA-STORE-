@@ -27,6 +27,7 @@ import {
   Info
 } from 'lucide-react';
 import { Category, Product, StoreSettings } from '../types';
+import { getNonEmptySrc } from '../lib/image';
 
 export interface VideoBatchItem {
   id: string;
@@ -965,30 +966,30 @@ export const AIVideoStudio: React.FC<AIVideoStudioProps> = ({
                 {/* Video Card Header */}
                 <div>
                   <div className="relative aspect-video rounded-2xl overflow-hidden bg-stone-950 mb-3 border border-stone-200 shadow-inner group">
-                    {item.renderedClipUrl ? (
+                    {getNonEmptySrc(item.renderedClipUrl) ? (
                       <video
-                        src={item.renderedClipUrl}
-                        poster={item.bestFramePoster}
+                        src={getNonEmptySrc(item.renderedClipUrl) || undefined}
+                        poster={getNonEmptySrc(item.bestFramePoster) || undefined}
                         muted
                         loop
                         playsInline
                         autoPlay
                         className="w-full h-full object-cover"
                       />
-                    ) : item.bestFramePoster ? (
+                    ) : getNonEmptySrc(item.bestFramePoster) ? (
                       <img
-                        src={item.bestFramePoster}
+                        src={getNonEmptySrc(item.bestFramePoster) || undefined}
                         alt={item.fileName}
                         className="w-full h-full object-cover"
                       />
-                    ) : (
+                    ) : getNonEmptySrc(item.originalUrl) ? (
                       <video
-                        src={item.originalUrl}
+                        src={getNonEmptySrc(item.originalUrl) || undefined}
                         muted
                         playsInline
                         className="w-full h-full object-cover opacity-60"
                       />
-                    )}
+                    ) : null}
 
                     {/* Top status tag */}
                     <div className="absolute top-2 right-2 flex items-center gap-1.5">
@@ -1257,8 +1258,8 @@ const VideoPreviewModal: React.FC<VideoPreviewModalProps> = ({
         <div className="relative aspect-video rounded-2xl overflow-hidden bg-black mb-5 shadow-inner">
           <video
             ref={videoElementRef}
-            src={video.renderedClipUrl || video.originalUrl}
-            poster={video.bestFramePoster}
+            src={getNonEmptySrc(video.renderedClipUrl) || getNonEmptySrc(video.originalUrl) || undefined}
+            poster={getNonEmptySrc(video.bestFramePoster) || undefined}
             muted={isMuted}
             autoPlay
             playsInline

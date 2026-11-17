@@ -3,6 +3,7 @@ import { Package, MessageCircle, Eye, Search, Filter, CheckCircle2, Clock, Truck
 import { Order, OrderStatus, StoreSettings } from '../types';
 import { generateOrderStatusWhatsAppUrl } from '../lib/whatsapp';
 import { ShippingRouteMap } from './ShippingRouteMap';
+import { getSafeImageSrc, handleProductImageError } from '../lib/image';
 
 interface AdminOrdersProps {
   orders: Order[];
@@ -325,9 +326,10 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({
                 <div key={idx} className="py-2 flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">
                     <img
-                      src={it.image_url}
+                      src={getSafeImageSrc(it.image_url)}
                       alt={it.title_ar}
                       className="w-10 h-10 rounded-lg object-cover border border-stone-200 shrink-0"
+                      onError={handleProductImageError}
                     />
                     <div>
                       <div className="font-bold text-stone-800 line-clamp-1">{it.title_ar}</div>

@@ -25,6 +25,7 @@ import { Order, OrderStatus, StoreSettings, Product } from '../types';
 import { trackOrdersCloud } from '../lib/cloud';
 import { getStoredOrders } from '../lib/storage';
 import { ShippingRouteMap } from './ShippingRouteMap';
+import { getSafeImageSrc, handleProductImageError } from '../lib/image';
 
 interface CustomerOrderTrackingPageProps {
   orders: Order[];
@@ -547,9 +548,10 @@ export const CustomerOrderTrackingPage: React.FC<CustomerOrderTrackingPageProps>
                           <div key={idx} className="p-3.5 flex items-center justify-between gap-3 text-xs">
                             <div className="flex items-center gap-3">
                               <img
-                                src={item.image_url}
+                                src={getSafeImageSrc(item.image_url)}
                                 alt={item.title_ar}
                                 className="w-12 h-12 rounded-xl object-cover border border-stone-200 shrink-0"
+                                onError={handleProductImageError}
                               />
                               <div>
                                 <h5 className="font-bold text-stone-900 leading-snug">{item.title_ar}</h5>

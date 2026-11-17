@@ -3,6 +3,7 @@ import { Search, X, Sparkles, Star, ShoppingBag, ArrowUpRight, Check, Flame, Che
 import { Product, StoreSettings } from '../types';
 import { searchProducts, POPULAR_SEARCH_TAGS } from '../lib/search';
 import { searchProductsFuzzyCloud } from '../lib/cloud';
+import { getSafeImageSrc, handleProductImageError } from '../lib/image';
 
 interface SmartSearchBarProps {
   products: Product[];
@@ -233,9 +234,10 @@ export const SmartSearchBar: React.FC<SmartSearchBarProps> = ({
                       {/* Thumbnail & Titles */}
                       <div className="flex items-center gap-3 min-w-0">
                         <img
-                          src={product.image_url}
+                          src={getSafeImageSrc(product.image_url)}
                           alt={product.title_ar}
                           className="w-12 h-12 rounded-xl object-cover border border-stone-200 shrink-0"
+                          onError={handleProductImageError}
                         />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 mb-0.5">

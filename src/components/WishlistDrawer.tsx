@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Heart, ShoppingBag, Trash2, ArrowRight, Sparkles, Check } from 'lucide-react';
 import { Product, StoreSettings } from '../types';
+import { getSafeImageSrc, handleProductImageError } from '../lib/image';
 
 interface WishlistDrawerProps {
   isOpen: boolean;
@@ -98,13 +99,14 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
                 return (
                   <div key={product.id} className="pt-3 first:pt-0 flex gap-3 sm:gap-4 items-center">
                     <img
-                      src={product.image_url}
+                      src={getSafeImageSrc(product.image_url)}
                       alt={product.title_ar}
                       onClick={() => {
                         onOpenDetails(product);
                         onClose();
                       }}
                       className="w-18 h-18 sm:w-20 sm:h-20 rounded-2xl object-cover bg-stone-100 shrink-0 border border-stone-200/60 cursor-pointer hover:opacity-90 transition-opacity"
+                      onError={handleProductImageError}
                     />
 
                     <div className="flex-1 flex flex-col justify-between">

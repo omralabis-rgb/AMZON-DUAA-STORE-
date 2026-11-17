@@ -3,6 +3,7 @@ import { X, ShoppingBag, MessageCircle, Sparkles, Shield, Heart, Truck, Check } 
 import { Product, StoreSettings } from '../types';
 import { generateSingleProductWhatsAppUrl } from '../lib/whatsapp';
 import { StarRatingDisplay } from './StarRating';
+import { getSafeImageSrc, handleProductImageError } from '../lib/image';
 
 interface QuickViewModalProps {
   product: Product | null;
@@ -54,9 +55,10 @@ export const QuickViewModal: React.FC<QuickViewModalProps> = ({
         {/* Product Image Column */}
         <div className="md:w-1/2 relative bg-stone-100 flex items-center justify-center p-6">
           <img
-            src={product.image_url}
+            src={getSafeImageSrc(product.image_url)}
             alt={product.title_ar}
             className="w-full h-full max-h-96 object-cover rounded-2xl shadow-sm"
+            onError={handleProductImageError}
           />
 
           <div className="absolute top-6 right-6 flex flex-col gap-2">

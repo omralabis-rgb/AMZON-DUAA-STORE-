@@ -3,6 +3,7 @@ import { ShoppingBag, Eye, MessageCircle, Sparkles, Check, ArrowUpRight, Heart, 
 import { Product, StoreSettings } from '../types';
 import { generateSingleProductWhatsAppUrl } from '../lib/whatsapp';
 import { StarRatingDisplay } from './StarRating';
+import { getSafeImageSrc, handleProductImageError } from '../lib/image';
 
 interface ProductCardProps {
   product: Product;
@@ -44,14 +45,11 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({
         onClick={() => onOpenDetails(product)}
       >
         <img
-          src={product.image_url}
+          src={getSafeImageSrc(product.image_url)}
           alt={product.title_ar}
           loading="lazy"
           className="w-full h-full object-cover object-center group-hover:scale-108 transition-transform duration-500 ease-out"
-          onError={(e) => {
-            (e.target as HTMLImageElement).src =
-              'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80';
-          }}
+          onError={handleProductImageError}
         />
 
         {/* Wishlist Heart Button */}

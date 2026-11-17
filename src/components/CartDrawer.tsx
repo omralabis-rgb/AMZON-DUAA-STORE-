@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Trash2, Plus, Minus, MessageCircle, ShoppingBag, Sparkles, Tag, Check, Copy, ArrowRight, CreditCard } from 'lucide-react';
 import { CartItem, CustomerOrderInfo, StoreSettings, Order } from '../types';
 import { buildWhatsAppMessage, generateWhatsAppOrderUrl } from '../lib/whatsapp';
+import { getSafeImageSrc, handleProductImageError } from '../lib/image';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -229,9 +230,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 return (
                   <div key={item.product.id} className="pt-3 first:pt-0 flex gap-3 sm:gap-4">
                     <img
-                      src={item.product.image_url}
+                      src={getSafeImageSrc(item.product.image_url)}
                       alt={item.product.title_ar}
                       className="w-18 h-18 sm:w-20 sm:h-20 rounded-2xl object-cover bg-stone-100 shrink-0 border border-stone-200/60"
+                      onError={handleProductImageError}
                     />
 
                     <div className="flex-1 flex flex-col justify-between">

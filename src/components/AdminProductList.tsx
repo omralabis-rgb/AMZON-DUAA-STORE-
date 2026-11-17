@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Search, Trash2, Edit3, Plus, Sparkles, Star, Package, Eye, MessageCircle, AlertTriangle } from 'lucide-react';
 import { Category, Product, StoreSettings } from '../types';
 import { generateSingleProductWhatsAppUrl } from '../lib/whatsapp';
+import { getSafeImageSrc, handleProductImageError } from '../lib/image';
 
 interface AdminProductListProps {
   products: Product[];
@@ -107,9 +108,10 @@ export const AdminProductList: React.FC<AdminProductListProps> = ({
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-3">
                         <img
-                          src={p.image_url}
+                          src={getSafeImageSrc(p.image_url)}
                           alt={p.title_ar}
                           className="w-12 h-12 rounded-xl object-cover border border-stone-200 shrink-0"
+                          onError={handleProductImageError}
                         />
                         <div>
                           <h4 className="font-bold text-stone-900 max-w-xs sm:max-w-md truncate">

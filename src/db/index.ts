@@ -9,6 +9,9 @@ declare global {
 
 // Function to create or retrieve the connection pool.
 export const createPool = () => {
+  if (!process.env.SQL_HOST) {
+    return null;
+  }
   if (!global._postgresPool) {
     global._postgresPool = new Pool({
       host: process.env.SQL_HOST,
@@ -27,8 +30,51 @@ export const createPool = () => {
   return global._postgresPool;
 };
 
-// Create or retrieve the pool instance.
-const pool = createPool();
+function createMockDb() {
+  const createChain = (): any => {
+    const promise = Promise.resolve([]);
+    return new Proxy(() => createChain(), {
+      get(_target, prop) {
+        if (prop === 'then') return promise.then.bind(promise);
+        if (prop === 'catch') return promise.catch.bind(promise);
+        if (prop === 'finally') return promise.finally.bind(promise);
+        return () => createChain();
+      },
+      apply() {
+        return createChain();
+      },
+    });
+  };
+  const noOp = {
+    findMany: async () => [],
+    findFirst: async () => null,
+    findUnique: async () => null,
+    create: async (d: any) => d?.data ?? {},
+    update: async (d: any) => d?.data ?? {},
+    delete: async () => ({}),
+  };
+  return new Proxy({} as ReturnType<typeof drizzle<typeof schema>>, {
+    get(_target, prop) {
+      if (prop === 'query') {
+        return new Proxy({}, { get: () => noOp });
+      }
+      return () => createChain();
+    },
+  });
+}
 
-// Initialize Drizzle with the pool and schema.
-export const db = drizzle(pool, { schema });
+let db: ReturnType<typeof drizzle<typeof schema>>;
+try {
+  const pool = createPool();
+  if (!pool) {
+    console.warn('[AI Studio] SQL_HOST not set — using mock Drizzle database');
+    db = createMockDb();
+  } else {
+    db = drizzle(pool, { schema });
+  }
+} catch {
+  console.warn('[AI Studio] Database not connected — using mock');
+  db = createMockDb();
+}
+
+export { db };
