@@ -280,7 +280,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span className="hidden xl:inline text-xs font-bold max-w-[90px] truncate">
                     {currentUser.name || 'حسابي'}
                   </span>
-                  {currentUser.role === 'admin' && (
+                  {adminUser && (
                     <span className="hidden sm:inline bg-rose-100 text-rose-700 text-[9px] px-1.5 py-0.2 rounded font-black">
                       مشرف
                     </span>
@@ -322,7 +322,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <span>قائمة المفضلة</span>
                     </button>
 
-                    {currentUser.role === 'admin' && (
+                    {adminUser && (
                       <button
                         onClick={() => {
                           setActiveTab('admin');

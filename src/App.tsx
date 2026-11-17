@@ -12,8 +12,7 @@ import {
   saveStoredCart,
   getStoredWishlist,
   saveStoredWishlist,
-  getAdminSession,
-  clearAdminSession,
+  purgeLegacyAdminStorage,
   resetToDefaults,
 } from './lib/storage';
 import {
@@ -41,6 +40,11 @@ import {
   removeWishlistFirestore,
   subscribeToAuthState,
   logoutFirebase,
+  isAuthorizedAdminFirebaseUser,
+  verifyAdminWithServer,
+  syncUserProfile,
+  registerGuestOrderTracking,
+  syncOrderStatusWithServer,
 } from './lib/firebase';
 import { AuthModal } from './components/AuthModal';
 import { UserProfile } from './types';
@@ -79,7 +83,7 @@ export default function App() {
   const [settings, setSettings] = useState<StoreSettings>(getStoredSettings);
   const [cart, setCart] = useState<CartItem[]>(getStoredCart);
   const [wishlist, setWishlist] = useState<string[]>(getStoredWishlist);
-  const [adminUser, setAdminUser] = useState<AdminUser | null>(getAdminSession);
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
 
   // Firebase User & Auth State
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
@@ -88,6 +92,7 @@ export default function App() {
   // References for Real-Time Cart Listener and Guest Cart Merging
   const cartUnsubscribeRef = useRef<(() => void) | null>(null);
   const guestCartRef = useRef<CartItem[]>(cart);
+  const lastVerifiedAdminUidRef = useRef<string | null>(null);
 
   useEffect(() => {
     guestCartRef.current = cart;
@@ -131,16 +136,16 @@ export default function App() {
         setProducts(pResult.products);
       }
 
-      // 2. Orders: Fetch from Firebase Firestore
-      const oResult = await fetchOrdersFirestore();
-      if (oResult.orders && oResult.orders.length > 0) {
-        setOrders(oResult.orders);
-      } else {
-        const oCloud = await fetchOrdersCloud();
-        setOrders(oCloud.orders);
-      }
+      // 2. Orders: Load cached/cloud orders for guest mount; Firestore orders load after auth state resolves
+      const oCloud = await fetchOrdersCloud();
+      setOrders(oCloud.orders);
     }
     loadData();
+  }, []);
+
+  // Purge any legacy client-side admin session keys on mount
+  useEffect(() => {
+    purgeLegacyAdminStorage();
   }, []);
 
   // Listen to Firebase Authentication State & Real-Time Cart Listener Lifecycle
@@ -152,21 +157,45 @@ export default function App() {
           cartUnsubscribeRef.current();
           cartUnsubscribeRef.current = null;
         }
+        lastVerifiedAdminUidRef.current = null;
         setCurrentUser(null);
+        setAdminUser(null);
         return;
       }
 
       // User logged in:
       setCurrentUser(profile);
 
-      if (profile.role === 'admin') {
-        const adminSession: AdminUser = {
-          id: profile.uid,
-          username: profile.name || 'مدير المتجر',
-          displayName: profile.name || 'مدير المتجر',
-          role: 'superadmin',
-        };
-        setAdminUser(adminSession);
+      let verifiedAsAdmin = false;
+      if (isAuthorizedAdminFirebaseUser(fbUser)) {
+        if (lastVerifiedAdminUidRef.current !== fbUser.uid) {
+          const serverCheck = await verifyAdminWithServer(fbUser);
+          if (serverCheck.authorized && serverCheck.adminUser) {
+            lastVerifiedAdminUidRef.current = fbUser.uid;
+            setAdminUser(serverCheck.adminUser);
+            verifiedAsAdmin = true;
+            const syncedAdminProfile = await syncUserProfile(fbUser, undefined, true);
+            setCurrentUser(syncedAdminProfile);
+          } else {
+            lastVerifiedAdminUidRef.current = null;
+            setAdminUser(null);
+          }
+        } else {
+          verifiedAsAdmin = true;
+        }
+      } else {
+        lastVerifiedAdminUidRef.current = null;
+        setAdminUser(null);
+      }
+
+      // Fetch authorized Firestore orders (all for verified admin, own orders for signed-in customers)
+      try {
+        const fsOrders = await fetchOrdersFirestore(fbUser.uid, verifiedAsAdmin);
+        if (fsOrders.orders && fsOrders.orders.length > 0) {
+          setOrders(fsOrders.orders);
+        }
+      } catch (e) {
+        console.warn('Error loading authenticated orders from Firestore:', e);
       }
 
       // Clean up previous listener to prevent duplicate listeners or race conditions
@@ -340,16 +369,35 @@ export default function App() {
   };
 
   // When order is placed from CartDrawer or CheckoutPage
-  const handleOrderPlaced = async (newOrder: Order) => {
-    const finalOrder: Order = {
+  const handleOrderPlaced = async (newOrder: Order): Promise<{ trackingToken?: string }> => {
+    const isGuestOrder = !currentUser?.uid;
+    let finalOrder: Order = {
       ...newOrder,
       userId: currentUser?.uid || 'guest',
     };
-    setOrders((prev) => [finalOrder, ...prev]);
-    await createOrderCloud(finalOrder);
+
+    let issuedTrackingToken: string | undefined;
+    if (isGuestOrder) {
+      const reg = await registerGuestOrderTracking(finalOrder);
+      if (reg) {
+        issuedTrackingToken = reg.trackingToken;
+        finalOrder = {
+          ...finalOrder,
+          tracking_token_hash: reg.trackingTokenHash,
+        };
+      }
+    }
+
+    const { tracking_token_hash: _omitHash, ...stateSafeOrder } = finalOrder;
+    setOrders((prev) => [stateSafeOrder, ...prev]);
+    await createOrderCloud(stateSafeOrder);
     await createOrderFirestore(finalOrder, currentUser?.uid);
     setCart([]);
+    if (!currentUser?.uid) {
+      saveStoredCart([]);
+    }
     showToast(`تم تسجيل وتأكيد طلبكِ بنجاح #${finalOrder.order_number}`);
+    return { trackingToken: issuedTrackingToken };
   };
 
   // Product Admin Handlers
@@ -408,9 +456,13 @@ export default function App() {
 
   // Order Admin Handlers
   const handleUpdateOrderStatus = async (orderId: string, status: OrderStatus) => {
+    const targetOrder = orders.find((o) => o.id === orderId);
     setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status } : o)));
     await updateOrderStatusCloud(orderId, status);
     await updateOrderStatusFirestore(orderId, status);
+    if (targetOrder?.order_number) {
+      await syncOrderStatusWithServer(targetOrder.order_number, status);
+    }
     showToast('تم تحديث حالة الطلب بنجاح');
   };
 
@@ -424,8 +476,9 @@ export default function App() {
     // 2. Sign out from Firebase Authentication
     await logoutFirebase();
     // 3. Reset user and admin session
+    lastVerifiedAdminUidRef.current = null;
+    purgeLegacyAdminStorage();
     setCurrentUser(null);
-    clearAdminSession();
     setAdminUser(null);
     // 4. Clear user cart from React state and localStorage
     setCart([]);
@@ -443,11 +496,9 @@ export default function App() {
     window.location.reload();
   };
 
-  const handleLogoutAdmin = () => {
-    clearAdminSession();
-    setAdminUser(null);
+  const handleLogoutAdmin = async () => {
+    await handleLogoutUser();
     setActiveTab('store');
-    showToast('تم تسجيل الخروج بنجاح', 'info');
   };
 
   const totalCartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -564,7 +615,7 @@ export default function App() {
 
         {/* Orders View */}
         {activeTab === 'orders' &&
-          (adminUser || currentUser?.role === 'admin' ? (
+          (adminUser ? (
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
               <AdminOrders
                 orders={orders}
@@ -584,6 +635,7 @@ export default function App() {
               }}
               onAddToCart={handleAddToCart}
               allProducts={products}
+              currentUser={currentUser}
             />
           ))}
 
@@ -663,7 +715,10 @@ export default function App() {
           ) : (
             <AdminLogin
               settings={settings}
-              onLoginSuccess={(user: AdminUser) => setAdminUser(user)}
+              onLoginSuccess={(user: AdminUser) => {
+                lastVerifiedAdminUidRef.current = user.id;
+                setAdminUser(user);
+              }}
               onBackToStore={() => setActiveTab('store')}
             />
           ))}
@@ -680,7 +735,10 @@ export default function App() {
           ) : (
             <AdminLogin
               settings={settings}
-              onLoginSuccess={(user: AdminUser) => setAdminUser(user)}
+              onLoginSuccess={(user: AdminUser) => {
+                lastVerifiedAdminUidRef.current = user.id;
+                setAdminUser(user);
+              }}
               onBackToStore={() => setActiveTab('store')}
             />
           ))}
@@ -696,6 +754,7 @@ export default function App() {
             }}
             onAddToCart={handleAddToCart}
             allProducts={products}
+            currentUser={currentUser}
           />
         )}
         </Suspense>

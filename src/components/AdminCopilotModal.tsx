@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Send, X, Sparkles, AlertCircle, ShoppingBag, ArrowUpRight, Copy, Check, RefreshCw } from 'lucide-react';
 import { Product, Order, StoreSettings } from '../types';
+import { getFirebaseIdToken } from '../lib/firebase';
 
 interface AdminCopilotModalProps {
   isOpen: boolean;
@@ -86,9 +87,13 @@ export const AdminCopilotModal: React.FC<AdminCopilotModalProps> = ({
         totalRevenue,
       };
 
+      const token = await getFirebaseIdToken();
       const res = await fetch('/api/ai/copilot', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           message: query,
           context: contextData,
@@ -96,6 +101,9 @@ export const AdminCopilotModal: React.FC<AdminCopilotModalProps> = ({
       });
 
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || 'تعذر التحقق من صلاحية الإدارة');
+      }
       const botMsg: ChatMessage = {
         id: `b-${Date.now()}`,
         sender: 'assistant',

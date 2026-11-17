@@ -25,3 +25,7 @@ Thumbs.db
 
 # Coverage
 coverage/
+
+# Local runtime data
+.data/
+

@@ -60,7 +60,6 @@ export interface StoreSettings {
   deliveryFee: number;
   freeDeliveryThreshold: number;
   welcomeMessage: string;
-  adminPassword?: string;
 }
 
 export interface CustomerOrderInfo {
@@ -102,6 +101,7 @@ export interface Order {
   whatsapp_sent: boolean;
   payment_method?: string;
   delivery_speed?: string;
+  tracking_token_hash?: string;
   created_at: string;
   updated_at?: string;
 }
@@ -120,7 +120,9 @@ export interface AdminUser {
   id: string;
   username: string;
   displayName: string;
+  email?: string;
   role: 'superadmin' | 'manager' | 'editor';
+  verifiedByServer?: boolean;
 }
 
 export interface AIAnalysisResult {

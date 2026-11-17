@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { Category, Product, StoreSettings } from '../types';
 import { getNonEmptySrc } from '../lib/image';
+import { getFirebaseIdToken } from '../lib/firebase';
 
 export interface VideoBatchItem {
   id: string;
@@ -220,9 +221,13 @@ export const AIVideoStudio: React.FC<AIVideoStudioProps> = ({
       let aiData: any = null;
       if (bestPoster) {
         try {
+          const token = await getFirebaseIdToken();
           const res = await fetch('/api/generate-product-content', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
             body: JSON.stringify({
               imageBase64: bestPoster,
               mimeType: 'image/jpeg',

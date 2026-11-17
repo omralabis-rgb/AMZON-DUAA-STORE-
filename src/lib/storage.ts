@@ -1,4 +1,4 @@
-import { Product, StoreSettings, CartItem, Order, AdminUser } from '../types';
+import { Product, StoreSettings, CartItem, Order } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_SETTINGS } from '../data/initialData';
 import { getSafeImageSrc } from './image';
 
@@ -7,6 +7,7 @@ const SETTINGS_KEY = 'elen_beauty_settings_v1';
 const CART_KEY = 'elen_beauty_cart_v1';
 const WISHLIST_KEY = 'amazon_duaa_wishlist_v1';
 const ORDERS_KEY = 'elen_beauty_orders_v1';
+const LEGACY_ADMIN_SESSION_KEY = 'elen_beauty_admin_session_v1';
 
 export function getStoredWishlist(): string[] {
   try {
@@ -26,7 +27,6 @@ export function saveStoredWishlist(wishlistIds: string[]): void {
     console.error('Error saving wishlist to storage:', e);
   }
 }
-const ADMIN_SESSION_KEY = 'elen_beauty_admin_session_v1';
 
 export function getStoredProducts(): Product[] {
   try {
@@ -55,18 +55,21 @@ export function saveStoredProducts(products: Product[]): void {
 export function getStoredSettings(): StoreSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return { ...INITIAL_SETTINGS, adminPassword: 'admin' };
+    if (!raw) return { ...INITIAL_SETTINGS };
     const parsed = JSON.parse(raw);
-    if (parsed.whatsappNumber === '966500000000' || parsed.storeName?.includes('إيلين')) {
-      parsed.whatsappNumber = INITIAL_SETTINGS.whatsappNumber;
-      parsed.storeName = INITIAL_SETTINGS.storeName;
-      parsed.tagline = INITIAL_SETTINGS.tagline;
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...INITIAL_SETTINGS, ...parsed }));
+    const { adminPassword: _removedPassword, ...cleanParsed } = parsed || {};
+    if (cleanParsed.whatsappNumber === '966500000000' || cleanParsed.storeName?.includes('إيلين')) {
+      cleanParsed.whatsappNumber = INITIAL_SETTINGS.whatsappNumber;
+      cleanParsed.storeName = INITIAL_SETTINGS.storeName;
+      cleanParsed.tagline = INITIAL_SETTINGS.tagline;
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...INITIAL_SETTINGS, ...cleanParsed }));
+    } else if (_removedPassword !== undefined) {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...INITIAL_SETTINGS, ...cleanParsed }));
     }
-    return { ...INITIAL_SETTINGS, adminPassword: 'admin', ...parsed };
+    return { ...INITIAL_SETTINGS, ...cleanParsed };
   } catch (e) {
     console.error('Error loading settings from storage:', e);
-    return { ...INITIAL_SETTINGS, adminPassword: 'admin' };
+    return { ...INITIAL_SETTINGS };
   }
 }
 
@@ -116,29 +119,11 @@ export function saveStoredOrders(orders: Order[]): void {
   }
 }
 
-export function getAdminSession(): AdminUser | null {
+export function purgeLegacyAdminStorage(): void {
   try {
-    const raw = localStorage.getItem(ADMIN_SESSION_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
+    localStorage.removeItem(LEGACY_ADMIN_SESSION_KEY);
   } catch (e) {
-    return null;
-  }
-}
-
-export function setAdminSession(user: AdminUser): void {
-  try {
-    localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(user));
-  } catch (e) {
-    console.error('Error setting admin session:', e);
-  }
-}
-
-export function clearAdminSession(): void {
-  try {
-    localStorage.removeItem(ADMIN_SESSION_KEY);
-  } catch (e) {
-    console.error('Error clearing admin session:', e);
+    console.error('Error clearing legacy admin session:', e);
   }
 }
 
@@ -148,7 +133,7 @@ export function resetToDefaults(): void {
     localStorage.removeItem(SETTINGS_KEY);
     localStorage.removeItem(CART_KEY);
     localStorage.removeItem(ORDERS_KEY);
-    localStorage.removeItem(ADMIN_SESSION_KEY);
+    localStorage.removeItem(LEGACY_ADMIN_SESSION_KEY);
   } catch (e) {
     console.error('Error resetting storage:', e);
   }

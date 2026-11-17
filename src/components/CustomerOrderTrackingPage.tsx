@@ -20,10 +20,10 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
+  KeyRound,
 } from 'lucide-react';
-import { Order, OrderStatus, StoreSettings, Product } from '../types';
-import { trackOrdersCloud } from '../lib/cloud';
-import { getStoredOrders } from '../lib/storage';
+import { Order, OrderStatus, StoreSettings, Product, UserProfile } from '../types';
+import { trackGuestOrderBySecret } from '../lib/firebase';
 import { ShippingRouteMap } from './ShippingRouteMap';
 import { getSafeImageSrc, handleProductImageError } from '../lib/image';
 
@@ -33,14 +33,10 @@ interface CustomerOrderTrackingPageProps {
   onBackToStore: () => void;
   onAddToCart: (product: Product, quantity?: number) => void;
   allProducts: Product[];
+  currentUser?: UserProfile | null;
 }
 
-interface TrackedOrderReference {
-  orderNumber: string;
-  phone: string;
-}
-
-const RECENT_TRACKED_KEY = 'amazon_duaa_recent_tracked_orders_v1';
+const LEGACY_RECENT_TRACKED_KEY = 'amazon_duaa_recent_tracked_orders_v1';
 
 const STATUS_STAGES: {
   key: OrderStatus;
@@ -80,36 +76,36 @@ export const CustomerOrderTrackingPage: React.FC<CustomerOrderTrackingPageProps>
   onBackToStore,
   onAddToCart,
   allProducts,
+  currentUser,
 }) => {
   const [orderNumberInput, setOrderNumberInput] = useState('');
-  const [phoneInput, setPhoneInput] = useState('');
+  const [trackingTokenInput, setTrackingTokenInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [foundOrders, setFoundOrders] = useState<Order[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [recentTracked, setRecentTracked] = useState<TrackedOrderReference[]>(() => {
-    try {
-      const raw = localStorage.getItem(RECENT_TRACKED_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
-  });
-
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
-  // Normalize phone for matching (remove spaces, plus, dashes, leading zeroes/country codes)
-  const normalizePhone = (p: string) => {
-    const digits = p.replace(/\D/g, '');
-    return digits.length > 7 ? digits.slice(-7) : digits;
-  };
+  // Purge any legacy client-side tracked reference cache
+  useEffect(() => {
+    try {
+      localStorage.removeItem(LEGACY_RECENT_TRACKED_KEY);
+    } catch {
+      // ignore storage access errors
+    }
+  }, []);
 
-  const handleTrackOrder = async (targetNum?: string, targetPhone?: string) => {
-    const num = (targetNum !== undefined ? targetNum : orderNumberInput).trim();
-    const phone = (targetPhone !== undefined ? targetPhone : phoneInput).trim();
+  // Only show orders belonging to a signed-in customer's own UID (never guest orders)
+  const authenticatedCustomerOrders = currentUser?.uid
+    ? orders.filter((o) => o.userId && o.userId === currentUser.uid && o.userId !== 'guest')
+    : [];
 
-    if (!num && !phone) {
-      setErrorMessage('يرجى إدخال رقم الطلب أو رقم الجوال للبحث عن الطلبات.');
+  const handleTrackOrder = async () => {
+    const num = orderNumberInput.trim();
+    const token = trackingTokenInput.trim();
+
+    if (!num || !token) {
+      setErrorMessage('يرجى إدخال رقم الطلب والرمز السري معاً للتحقق من الطلب.');
       return;
     }
 
@@ -118,57 +114,21 @@ export const CustomerOrderTrackingPage: React.FC<CustomerOrderTrackingPageProps>
     setHasSearched(true);
 
     try {
-      // 1. Try local state orders first
-      const cleanNum = num.toLowerCase();
-      const cleanPhone = normalizePhone(phone);
+      const { order, error } = await trackGuestOrderBySecret(num, token);
 
-      let matches = orders.filter((o) => {
-        const oNum = o.order_number.toLowerCase();
-        const oPhone = normalizePhone(o.customer_phone);
-
-        const matchNum = num ? oNum.includes(cleanNum) : true;
-        const matchPhone = phone ? oPhone.includes(cleanPhone) : true;
-
-        return matchNum && matchPhone;
-      });
-
-      // 2. If no local match, try Supabase cloud RPC function
-      if (matches.length === 0 && (num || phone)) {
-        const { orders: cloudResults, isCloud } = await trackOrdersCloud(num, phone);
-        if (isCloud && cloudResults.length > 0) {
-          matches = cloudResults;
-        }
-      }
-
-      setFoundOrders(matches);
-
-      if (matches.length > 0) {
-        setExpandedOrderId(matches[0].id);
-
-        // Save to recent searched
-        const newRef: TrackedOrderReference = {
-          orderNumber: matches[0].order_number,
-          phone: matches[0].customer_phone,
-        };
-
-        setRecentTracked((prev) => {
-          const filtered = prev.filter((r) => r.orderNumber !== newRef.orderNumber);
-          const updated = [newRef, ...filtered].slice(0, 5);
-          try {
-            localStorage.setItem(RECENT_TRACKED_KEY, JSON.stringify(updated));
-          } catch (e) {
-            console.warn('Failed to save recent tracked orders:', e);
-          }
-          return updated;
-        });
+      if (order) {
+        setFoundOrders([order]);
+        setExpandedOrderId(order.id);
       } else {
+        setFoundOrders([]);
         setErrorMessage(
-          'لم نجد أي طلب يطابق البيانات المخلة. يرجى التأكد من رقم الطلب (مثال: ELEN-1234) ورقم الجوال المسجل عند الشراء.'
+          error || 'تعذر التحقق من الطلب. يرجى التأكد من صحة رقم الطلب والرمز السري الممنوح لكِ عند الشراء.'
         );
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error tracking order:', err);
-      setErrorMessage('حدث خطأ أثناء الاستعلام عن الطلب. يرجى المحاولة مرة أخرى.');
+      setFoundOrders([]);
+      setErrorMessage('حدث خطأ أثناء التحقق من الطلب. يرجى المحاولة مرة أخرى.');
     } finally {
       setLoading(false);
     }
@@ -239,7 +199,7 @@ export const CustomerOrderTrackingPage: React.FC<CustomerOrderTrackingPageProps>
           متابعة حالة وتاريخ طلباتك
         </h1>
         <p className="text-xs sm:text-sm text-stone-500 leading-relaxed">
-          أدخلي رقم الطلب ورقم الجوال لاستعراض مسار الشحنة، الفاتورة المفصلة، وإعادة طلب المنتجات بضغطة زر واحدة.
+          أدخلي رقم الطلب والرمز السري الفريد الذي ظهر لكِ عند إتمام الشراء لاستعراض حالة الشحنة من أي جهاز بأمان.
         </p>
       </div>
 
@@ -261,25 +221,29 @@ export const CustomerOrderTrackingPage: React.FC<CustomerOrderTrackingPageProps>
               </label>
               <input
                 type="text"
+                required
                 value={orderNumberInput}
                 onChange={(e) => setOrderNumberInput(e.target.value)}
-                placeholder="مثال: ELEN-1234 أو ORD-20261005-0001"
+                placeholder="مثال: ELEN-1234"
                 className="w-full text-xs sm:text-sm p-3 bg-stone-50 border border-stone-200 rounded-2xl focus:bg-white focus:border-rose-500 focus:outline-hidden font-mono uppercase"
+                dir="ltr"
               />
             </div>
 
-            {/* Phone Number Field */}
+            {/* Secret Tracking Token Field */}
             <div>
               <label className="block text-xs font-bold text-stone-800 mb-1.5 flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-rose-600" />
-                <span>رقم الجوال المسجل:</span>
+                <KeyRound className="w-3.5 h-3.5 text-rose-600" />
+                <span>الرمز السري للطلب:</span>
               </label>
               <input
-                type="tel"
-                value={phoneInput}
-                onChange={(e) => setPhoneInput(e.target.value)}
-                placeholder="مثال: 0501234567 أو 777627595"
+                type="password"
+                required
+                value={trackingTokenInput}
+                onChange={(e) => setTrackingTokenInput(e.target.value)}
+                placeholder="AD-xxxxxxxxxxxxxxxxxxxxxxxx"
                 className="w-full text-xs sm:text-sm p-3 bg-stone-50 border border-stone-200 rounded-2xl focus:bg-white focus:border-rose-500 focus:outline-hidden font-mono"
+                dir="ltr"
               />
             </div>
           </div>
@@ -291,11 +255,11 @@ export const CustomerOrderTrackingPage: React.FC<CustomerOrderTrackingPageProps>
             className="w-full bg-rose-600 hover:bg-rose-700 disabled:bg-stone-300 text-white font-black text-xs sm:text-sm py-3.5 px-6 rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
           >
             {loading ? (
-              <span>جاري البحث والاستعلام...</span>
+              <span>جاري التحقق من الرمز واسترجاع الطلب...</span>
             ) : (
               <>
-                <Search className="w-4 h-4" />
-                <span>استعلام وتتبع الطلبات</span>
+                <ShieldCheck className="w-4 h-4" />
+                <span>تحقق وتتبع حالة الطلب</span>
               </>
             )}
           </button>
@@ -309,32 +273,40 @@ export const CustomerOrderTrackingPage: React.FC<CustomerOrderTrackingPageProps>
           </div>
         )}
 
-        {/* Recent Tracked Chips */}
-        {recentTracked.length > 0 && (
-          <div className="mt-6 pt-5 border-t border-stone-100">
-            <span className="text-[11px] font-bold text-stone-500 block mb-2">
-              طلب استعلمتي عنه مؤخراً على هذا الجهاز:
-            </span>
-            <div className="flex flex-wrap gap-2">
-              {recentTracked.map((ref, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => {
-                    setOrderNumberInput(ref.orderNumber);
-                    setPhoneInput(ref.phone);
-                    handleTrackOrder(ref.orderNumber, ref.phone);
-                  }}
-                  className="text-xs bg-stone-100 hover:bg-rose-50 hover:text-rose-700 border border-stone-200/80 px-3 py-1.5 rounded-xl font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Clock className="w-3 h-3 text-stone-400" />
-                  <span>#{ref.orderNumber}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        <div className="mt-4 p-3.5 rounded-2xl bg-stone-50 border border-stone-200/80 text-[11px] text-stone-600 flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>لحماية خصوصيتك، لا يمكن استعراض بيانات الطلب أو حالته برقم الطلب وحده، بل يتطلب التحقق من الرمز السري على الخادم.</span>
+        </div>
       </div>
+
+      {/* Signed-in Customer's Own Orders (never guest orders) */}
+      {!hasSearched && authenticatedCustomerOrders.length > 0 && (
+        <div className="mb-8 space-y-3">
+          <h2 className="text-sm font-black text-stone-800">طلباتي المسجلة في حسابي ({authenticatedCustomerOrders.length})</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {authenticatedCustomerOrders.map((ownOrder) => (
+              <button
+                key={ownOrder.id}
+                type="button"
+                onClick={() => {
+                  setFoundOrders([ownOrder]);
+                  setHasSearched(true);
+                  setExpandedOrderId(ownOrder.id);
+                }}
+                className="text-right p-4 bg-white rounded-2xl border border-stone-200 hover:border-rose-300 transition-colors flex items-center justify-between cursor-pointer"
+              >
+                <div>
+                  <span className="font-mono font-bold text-stone-900 text-xs">#{ownOrder.order_number}</span>
+                  <span className="block text-[11px] text-stone-500 mt-0.5">
+                    {ownOrder.total_amount} {settings.currency}
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold text-rose-600">عرض التفاصيل</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Results Section */}
       {hasSearched && foundOrders.length > 0 && (

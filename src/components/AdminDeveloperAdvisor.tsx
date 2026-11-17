@@ -20,6 +20,7 @@ import {
   ChevronLeft,
 } from 'lucide-react';
 import { StoreSettings } from '../types';
+import { getFirebaseIdToken } from '../lib/firebase';
 
 interface Message {
   id: string;
@@ -174,9 +175,13 @@ export const AdminDeveloperAdvisor: React.FC<AdminDeveloperAdvisorProps> = ({
         text: m.content,
       }));
 
+      const token = await getFirebaseIdToken();
       const res = await fetch('/api/ai/developer-advisor', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           message: query,
           history,

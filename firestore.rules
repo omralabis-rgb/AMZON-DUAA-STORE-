@@ -28,10 +28,20 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // Strict primary admin verification:
+    // Requires verified Google authentication specifically for alabsiamal14@gmail.com
+    function isPrimaryAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == "alabsiamal14@gmail.com" &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.firebase.sign_in_provider == "google.com";
+    }
+
     function isAdmin() {
-      return isSignedIn() && (
+      return isPrimaryAdmin() && (
+        request.auth.token.admin == true ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        request.auth.token.email == "omralabis@gmail.com"
+        isPrimaryAdmin()
       );
     }
 
@@ -42,10 +52,14 @@ service cloud.firestore {
       allow create: if isOwner(userId) &&
         isValidId(userId) &&
         incoming().uid == userId &&
-        incoming().role == 'user';
-      allow update: if isOwner(userId) && (
+        (incoming().role == 'user' || (isAdmin() && incoming().role == 'admin'));
+      allow update: if (isOwner(userId) || isAdmin()) && (
         isAdmin() ||
-        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'photoURL', 'updatedAt'])
+        (
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'photoURL', 'updatedAt']) &&
+          incoming().role == existing().role &&
+          incoming().uid == existing().uid
+        )
       );
       allow delete: if isAdmin();
 
@@ -62,8 +76,16 @@ service cloud.firestore {
 
     // Admins authorization collection
     match /admins/{userId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create, update: if isAdmin() &&
+        isOwner(userId) &&
+        isValidId(userId) &&
+        incoming().keys().hasAll(['email', 'role']) &&
+        incoming().keys().hasOnly(['uid', 'email', 'role', 'provider', 'createdAt', 'updatedAt']) &&
+        incoming().email == "alabsiamal14@gmail.com" &&
+        incoming().role == "admin";
+      allow delete: if isAdmin();
     }
 
     // Products collection (Public read, Admin managed)
@@ -74,10 +96,14 @@ service cloud.firestore {
 
     // Orders collection
     match /orders/{orderId} {
-      allow get: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin() || existing().userId == 'guest';
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if (isSignedIn() && incoming().userId == request.auth.uid && incoming().status == 'pending') ||
-                    (!isSignedIn() && incoming().userId == 'guest' && incoming().status == 'pending');
+      allow get: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(orderId) &&
+        incoming().id == orderId &&
+        incoming().status == 'pending' && (
+          (isSignedIn() && incoming().userId == request.auth.uid) ||
+          (!isSignedIn() && incoming().userId == 'guest')
+        );
       allow update: if isAdmin() || (
         isSignedIn() &&
         existing().userId == request.auth.uid &&

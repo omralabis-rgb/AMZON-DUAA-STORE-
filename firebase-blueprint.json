@@ -20,9 +20,12 @@
       "description": "Admin authorization entry",
       "type": "object",
       "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
         "email": { "type": "string", "maxLength": 150 },
         "role": { "type": "string", "enum": ["admin"] },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "provider": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["email", "role"]
     },

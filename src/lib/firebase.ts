@@ -26,10 +26,12 @@ import {
   getDocFromServer,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Product, CartItem, Order, OrderStatus, UserProfile } from '../types';
+import { Product, CartItem, Order, OrderStatus, UserProfile, AdminUser } from '../types';
 import { INITIAL_PRODUCTS } from '../data/initialData';
 import { getStoredProducts, saveStoredProducts, getStoredOrders, saveStoredOrders } from './storage';
 import { getSafeImageSrc, getNonEmptySrc } from './image';
+
+export const PRIMARY_ADMIN_EMAIL = 'alabsiamal14@gmail.com';
 
 // =========================================================================
 // 1. FIREBASE SINGLETON INITIALIZATION WITH EXACT PROJECT CONFIGURATION
@@ -41,6 +43,7 @@ export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getA
 // Auth Instance
 export const auth = getAuth(app);
 export const googleAuthProvider = new GoogleAuthProvider();
+googleAuthProvider.setCustomParameters({ prompt: 'select_account' });
 
 // Firestore Instance with exact Database ID from firebase-applet-config.json
 export const firestoreDatabaseId = firebaseConfig.firestoreDatabaseId || '(default)';
@@ -89,6 +92,13 @@ export function getFriendlyFirebaseErrorMessage(err: any): string {
       return 'تمت محاولة تسجيل الدخول عدة مرات بشكل خاطئ. تم إيقاف الحساب مؤقتاً لحمايتك، يرجى المحاولة بعد قليل.';
     case 'auth/user-disabled':
       return 'تم تعطيل هذا الحساب من قِبل إدارة النظام.';
+    case 'auth/popup-blocked':
+      return 'قام المتصفح بحظر نافذة تسجيل الدخول عبر Google. يرجى السماح بالنوافذ المنبثقة والمحاولة مجدداً.';
+    case 'auth/popup-closed-by-user':
+    case 'auth/cancelled-popup-request':
+      return 'تم إغلاق نافذة تسجيل الدخول عبر Google قبل إتمام المصادقة.';
+    case 'auth/account-exists-with-different-credential':
+      return 'هذا البريد مسجل بطريقة دخول مختلفة.';
     case 'permission-denied':
       return 'ليس لديك الصلاحيات الكافية لتنفيذ هذه العملية.';
     case 'unavailable':
@@ -133,9 +143,105 @@ export async function loginWithEmail(
   return { user: cred.user, profile };
 }
 
+export function isAuthorizedAdminFirebaseUser(firebaseUser: FirebaseUser | null | undefined): boolean {
+  if (!firebaseUser) return false;
+  const email = (firebaseUser.email || '').trim().toLowerCase();
+  const hasGoogleProvider = firebaseUser.providerData.some((p) => p.providerId === 'google.com');
+  return email === PRIMARY_ADMIN_EMAIL && firebaseUser.emailVerified === true && hasGoogleProvider;
+}
+
+export async function getFirebaseIdToken(forceRefresh = false): Promise<string | null> {
+  if (!auth.currentUser) return null;
+  try {
+    return await auth.currentUser.getIdToken(forceRefresh);
+  } catch {
+    return null;
+  }
+}
+
+export async function verifyAdminWithServer(
+  firebaseUser?: FirebaseUser | null,
+  forceRefresh = false
+): Promise<{
+  authorized: boolean;
+  adminUser?: AdminUser;
+  customClaimsSynced?: boolean;
+  error?: string;
+}> {
+  const targetUser = firebaseUser || auth.currentUser;
+  if (!targetUser) {
+    return { authorized: false, error: 'يرجى تسجيل الدخول بحساب Google المعتمد للمشرف أولاً.' };
+  }
+
+  try {
+    const idToken = await targetUser.getIdToken(forceRefresh);
+    const res = await fetch('/api/auth/verify-admin', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.authorized || !data?.admin) {
+      return {
+        authorized: false,
+        error: data?.error || 'غير مصرح بهذا الحساب للدخول إلى لوحة الإدارة.',
+      };
+    }
+
+    if (data.customClaimsSynced && !data.customClaimsPresent) {
+      try {
+        await targetUser.getIdToken(true);
+      } catch {
+        // Non-blocking refresh
+      }
+    }
+
+    return {
+      authorized: true,
+      customClaimsSynced: Boolean(data.customClaimsSynced),
+      adminUser: data.admin as AdminUser,
+    };
+  } catch {
+    return {
+      authorized: false,
+      error: 'تعذر التحقق من صلاحية المشرف عبر الخادم. يرجى المحاولة مجدداً.',
+    };
+  }
+}
+
+export async function loginAdminWithGoogle(): Promise<{
+  user: FirebaseUser;
+  profile: UserProfile;
+  adminUser: AdminUser;
+}> {
+  const cred = await signInWithPopup(auth, googleAuthProvider);
+  const verification = await verifyAdminWithServer(cred.user, true);
+
+  if (!verification.authorized || !verification.adminUser) {
+    try {
+      await signOut(auth);
+    } catch {
+      // Ignore cleanup error
+    }
+    throw new Error(
+      verification.error ||
+        'هذا الحساب غير مخوّل للدخول إلى لوحة الإدارة. يُسمح فقط لحساب المشرف الأساسي المعتمد عبر Google.'
+    );
+  }
+
+  const profile = await syncUserProfile(cred.user, undefined, true);
+  return { user: cred.user, profile, adminUser: verification.adminUser };
+}
+
 export async function loginWithGooglePopup(): Promise<{ user: FirebaseUser; profile: UserProfile }> {
   const cred = await signInWithPopup(auth, googleAuthProvider);
-  const profile = await syncUserProfile(cred.user);
+  const verification = isAuthorizedAdminFirebaseUser(cred.user)
+    ? await verifyAdminWithServer(cred.user, false)
+    : { authorized: false };
+  const profile = await syncUserProfile(cred.user, undefined, verification.authorized);
   return { user: cred.user, profile };
 }
 
@@ -149,22 +255,42 @@ export async function logoutFirebase(): Promise<void> {
 
 export async function syncUserProfile(
   firebaseUser: FirebaseUser,
-  customName?: string
+  customName?: string,
+  serverVerifiedAdmin = false
 ): Promise<UserProfile> {
-  const isAdminEmail = firebaseUser.email?.toLowerCase() === 'omralabis@gmail.com';
-  const role: 'admin' | 'user' = isAdminEmail ? 'admin' : 'user';
+  const isVerifiedAdmin = serverVerifiedAdmin && isAuthorizedAdminFirebaseUser(firebaseUser);
+  const role: 'admin' | 'user' = isVerifiedAdmin ? 'admin' : 'user';
+  const nowIso = new Date().toISOString();
 
   const userRef = doc(db, 'users', firebaseUser.uid);
   try {
     const snap = await getDoc(userRef);
     if (snap.exists()) {
       const data = snap.data();
+      if (isVerifiedAdmin) {
+        try {
+          await setDoc(
+            doc(db, 'admins', firebaseUser.uid),
+            {
+              uid: firebaseUser.uid,
+              email: PRIMARY_ADMIN_EMAIL,
+              role: 'admin',
+              provider: 'google.com',
+              updatedAt: nowIso,
+            },
+            { merge: true }
+          );
+        } catch (adminSyncErr) {
+          console.warn('Could not update admin doc in Firestore:', adminSyncErr);
+        }
+      }
+
       return {
         uid: firebaseUser.uid,
         name: data.name || customName || firebaseUser.displayName || 'مستخدم أمازون دعاء',
         email: data.email || firebaseUser.email || '',
         photoURL: data.photoURL || firebaseUser.photoURL || undefined,
-        role: data.role || role,
+        role,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
       };
@@ -173,24 +299,27 @@ export async function syncUserProfile(
     console.warn('Could not read user profile from Firestore:', err);
   }
 
-  // Create clean user document matching Firestore Schema without password
+  // Create clean user document matching Firestore Schema without password or undefined fields
   const newProfile: UserProfile = {
     uid: firebaseUser.uid,
     name: customName || firebaseUser.displayName || 'مستخدم أمازون دعاء',
     email: firebaseUser.email || '',
-    photoURL: firebaseUser.photoURL || undefined,
+    ...(firebaseUser.photoURL ? { photoURL: firebaseUser.photoURL } : {}),
     role,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: nowIso,
+    updatedAt: nowIso,
   };
 
   try {
     await setDoc(userRef, newProfile);
-    if (role === 'admin') {
+    if (isVerifiedAdmin) {
       await setDoc(doc(db, 'admins', firebaseUser.uid), {
-        email: firebaseUser.email,
+        uid: firebaseUser.uid,
+        email: PRIMARY_ADMIN_EMAIL,
         role: 'admin',
-        createdAt: new Date().toISOString(),
+        provider: 'google.com',
+        createdAt: nowIso,
+        updatedAt: nowIso,
       });
     }
   } catch (err) {
@@ -209,7 +338,7 @@ export function subscribeToAuthState(
       return;
     }
     try {
-      const profile = await syncUserProfile(firebaseUser);
+      const profile = await syncUserProfile(firebaseUser, undefined, false);
       callback(firebaseUser, profile);
     } catch {
       callback(firebaseUser, {
@@ -217,7 +346,7 @@ export function subscribeToAuthState(
         name: firebaseUser.displayName || 'مستخدم أمازون دعاء',
         email: firebaseUser.email || '',
         photoURL: firebaseUser.photoURL || undefined,
-        role: firebaseUser.email === 'omralabis@gmail.com' ? 'admin' : 'user',
+        role: 'user',
       });
     }
   });
@@ -598,9 +727,74 @@ export async function deleteProductFirestore(productId: string): Promise<void> {
 // 7. CLOUD FIRESTORE ORDERS SERVICES
 // =========================================================================
 
+export async function registerGuestOrderTracking(order: Order): Promise<{
+  trackingToken: string;
+  trackingTokenHash: string;
+} | null> {
+  try {
+    const res = await fetch('/api/orders/guest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(order),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data?.trackingToken && data?.trackingTokenHash) {
+      return {
+        trackingToken: String(data.trackingToken),
+        trackingTokenHash: String(data.trackingTokenHash),
+      };
+    }
+    return null;
+  } catch (err) {
+    console.warn('Failed to register guest tracking token:', err);
+    return null;
+  }
+}
+
+export async function trackGuestOrderBySecret(
+  orderNumber: string,
+  trackingToken: string
+): Promise<{ order?: Order; error?: string }> {
+  try {
+    const res = await fetch('/api/orders/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderNumber, trackingToken }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.order) {
+      return {
+        error: data?.error || 'تعذر التحقق من الطلب. يرجى التأكد من رقم الطلب والرمز السري الصحيح.',
+      };
+    }
+    return { order: data.order as Order };
+  } catch {
+    return { error: 'تعذر الاتصال بالخادم للتحقق من الطلب. يرجى المحاولة مجدداً.' };
+  }
+}
+
+export async function syncOrderStatusWithServer(orderNumber: string, status: OrderStatus): Promise<void> {
+  try {
+    const token = await getFirebaseIdToken();
+    if (!token) return;
+    await fetch(`/api/db/orders/${encodeURIComponent(orderNumber)}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ status }),
+    });
+  } catch (err) {
+    console.warn('Failed to sync order status with server:', err);
+  }
+}
+
 export async function createOrderFirestore(order: Order, userId?: string): Promise<void> {
+  const { tracking_token_hash: trackingTokenHash, ...localSafeOrder } = order;
   const currentOrders = getStoredOrders();
-  saveStoredOrders([order, ...currentOrders]);
+  saveStoredOrders([localSafeOrder, ...currentOrders]);
 
   try {
     const orderDocRef = doc(db, 'orders', order.id);
@@ -620,6 +814,7 @@ export async function createOrderFirestore(order: Order, userId?: string): Promi
       status: order.status || 'pending',
       payment_method: order.payment_method || 'cod',
       notes: order.notes || '',
+      ...(trackingTokenHash ? { tracking_token_hash: trackingTokenHash } : {}),
       createdAt: order.created_at || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });

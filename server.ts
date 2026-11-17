@@ -3,11 +3,25 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
-import { requireAuth, AuthRequest } from './src/middleware/auth.ts';
+import {
+  requireAuth,
+  requireAdmin,
+  isVerifiedAdminToken,
+  AuthRequest,
+} from './src/middleware/auth.ts';
+import { adminAuth } from './src/lib/firebase-admin.ts';
 import { getOrCreateUser } from './src/db/users.ts';
 import { getAllProducts, upsertProduct } from './src/db/products.ts';
 import { getAllOrders, getOrderByNumber, createOrderInDb, updateOrderStatusInDb } from './src/db/orders.ts';
 import { getReviewsForProduct, createReviewInDb } from './src/db/reviews.ts';
+import {
+  registerGuestOrder,
+  updateGuestOrderStatus,
+  verifyAndGetGuestOrder,
+  checkTrackRateLimit,
+  recordTrackAttemptFailure,
+  clearTrackAttemptFailures,
+} from './src/lib/guest-tracking.ts';
 
 dotenv.config();
 
@@ -30,12 +44,86 @@ app.get('/api/auth/me', requireAuth, async (req: AuthRequest, res) => {
     if (!req.user || !req.user.uid) {
       return res.status(401).json({ error: 'Unauthorized: No user found in token' });
     }
-    const dbUser = await getOrCreateUser(req.user.uid, req.user.email || '', req.user.name);
-    return res.json({ user: dbUser });
+    const isAdmin = isVerifiedAdminToken(req.user);
+    try {
+      const dbUser = await getOrCreateUser(req.user.uid, req.user.email || '', req.user.name);
+      return res.json({ user: dbUser, isAdmin });
+    } catch {
+      return res.json({
+        user: {
+          uid: req.user.uid,
+          email: req.user.email || '',
+          displayName: req.user.name || null,
+        },
+        isAdmin,
+      });
+    }
   } catch (error: any) {
     console.error('Failed to sync user profile:', error);
     return res.status(500).json({ error: error.message || 'Failed to sync user profile' });
   }
+});
+
+// Server-side Admin Verification via Firebase ID Token (Google Auth + Email + Custom Claims)
+app.post('/api/auth/verify-admin', requireAuth, async (req: AuthRequest, res) => {
+  const decoded = req.user;
+  if (!decoded || !decoded.uid) {
+    return res.status(401).json({ authorized: false, error: 'Unauthorized: Missing user identity' });
+  }
+
+  if (!isVerifiedAdminToken(decoded)) {
+    if (decoded.admin === true || decoded.role === 'admin') {
+      try {
+        const userRecord = await adminAuth.getUser(decoded.uid);
+        const currentClaims = { ...(userRecord.customClaims || {}) };
+        delete currentClaims.admin;
+        currentClaims.role = 'user';
+        await adminAuth.setCustomUserClaims(decoded.uid, currentClaims);
+      } catch {
+        // Best-effort claim cleanup
+      }
+    }
+
+    return res.status(403).json({
+      authorized: false,
+      error: 'غير مصرح بهذا الحساب للدخول إلى لوحة الإدارة. يُسمح فقط لحساب المشرف المعتمد عبر Google.',
+    });
+  }
+
+  let customClaimsSynced = false;
+  const hasAdminClaims = decoded.admin === true && decoded.role === 'admin';
+  if (!hasAdminClaims) {
+    try {
+      const userRecord = await adminAuth.getUser(decoded.uid);
+      await adminAuth.setCustomUserClaims(decoded.uid, {
+        ...(userRecord.customClaims || {}),
+        admin: true,
+        role: 'admin',
+      });
+      customClaimsSynced = true;
+    } catch {
+      // Preview runtime ADC may not carry Firebase Auth Admin IAM permissions;
+      // server still enforces exact Google email + email_verified + sign_in_provider on every request.
+      customClaimsSynced = false;
+    }
+  } else {
+    customClaimsSynced = true;
+  }
+
+  return res.json({
+    authorized: true,
+    verifiedByServer: true,
+    customClaimsSynced,
+    customClaimsPresent: hasAdminClaims,
+    admin: {
+      id: decoded.uid,
+      username: decoded.email || 'admin',
+      displayName: decoded.name || 'مشرف المتجر',
+      email: decoded.email || '',
+      role: 'superadmin',
+      verifiedByServer: true,
+    },
+  });
 });
 
 // Cloud SQL Products API
@@ -49,7 +137,7 @@ app.get('/api/db/products', async (req, res) => {
   }
 });
 
-app.post('/api/db/products', async (req, res) => {
+app.post('/api/db/products', requireAdmin, async (req, res) => {
   try {
     const productData = req.body;
     if (!productData || !productData.id || !productData.title_ar) {
@@ -64,7 +152,7 @@ app.post('/api/db/products', async (req, res) => {
 });
 
 // Cloud SQL Orders API
-app.get('/api/db/orders', async (req, res) => {
+app.get('/api/db/orders', requireAdmin, async (req, res) => {
   try {
     const ordersList = await getAllOrders();
     return res.json(ordersList);
@@ -74,7 +162,7 @@ app.get('/api/db/orders', async (req, res) => {
   }
 });
 
-app.get('/api/db/orders/:orderNumber', async (req, res) => {
+app.get('/api/db/orders/:orderNumber', requireAdmin, async (req, res) => {
   try {
     const { orderNumber } = req.params;
     const order = await getOrderByNumber(orderNumber);
@@ -102,18 +190,89 @@ app.post('/api/db/orders', async (req, res) => {
   }
 });
 
-app.patch('/api/db/orders/:orderNumber/status', async (req, res) => {
+app.patch('/api/db/orders/:orderNumber/status', requireAdmin, async (req, res) => {
   try {
     const { orderNumber } = req.params;
     const { status } = req.body;
     if (!status) {
       return res.status(400).json({ error: 'status is required' });
     }
-    const updated = await updateOrderStatusInDb(orderNumber, status);
-    return res.json(updated);
+    const guestSynced = updateGuestOrderStatus(orderNumber, status);
+    let updated: any = null;
+    try {
+      updated = await updateOrderStatusInDb(orderNumber, status);
+    } catch {
+      // Cloud SQL may be unconfigured in preview; guest tracking store still updated
+    }
+    return res.json(updated || { orderNumber, status, guestSynced });
   } catch (error: any) {
-    console.error('Failed to update order status in Cloud SQL:', error);
+    console.error('Failed to update order status:', error);
     return res.status(500).json({ error: error.message || 'Failed to update order status' });
+  }
+});
+
+// Guest Order Secret Token Registration (stores salted hash only, returns secret token once)
+app.post('/api/orders/guest', (req, res) => {
+  try {
+    const orderData = req.body;
+    if (!orderData || typeof orderData.order_number !== 'string' || !orderData.order_number.trim()) {
+      return res.status(400).json({ error: 'رقم الطلب مطلوب لإنشاء رمز المتابعة السري.' });
+    }
+    if (!Array.isArray(orderData.items) || orderData.items.length === 0) {
+      return res.status(400).json({ error: 'تفاصيل المنتجات مطلوبة لتسجيل الطلب.' });
+    }
+
+    const result = registerGuestOrder(orderData);
+    return res.status(201).json({
+      orderNumber: result.orderNumber,
+      trackingToken: result.trackingToken,
+      trackingTokenHash: result.trackingTokenHash,
+    });
+  } catch (error: any) {
+    if (error?.message === 'ORDER_NUMBER_EXISTS') {
+      return res.status(409).json({ error: 'رقم الطلب مسجل مسبقاً.' });
+    }
+    console.error('Failed to register guest order tracking:', error);
+    return res.status(500).json({ error: 'تعذر إنشاء رمز المتابعة السري للطلب.' });
+  }
+});
+
+// Guest Order Verification & Tracking (requires BOTH orderNumber and secret trackingToken)
+app.post('/api/orders/track', async (req, res) => {
+  const clientIp =
+    (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+    req.socket.remoteAddress ||
+    'unknown';
+
+  if (!checkTrackRateLimit(clientIp)) {
+    return res.status(429).json({
+      error: 'تم تجاوز الحد المسموح لمحاولات التحقق. يرجى الانتظار بضع دقائق ثم المحاولة مجدداً.',
+    });
+  }
+
+  try {
+    const orderNumber = typeof req.body?.orderNumber === 'string' ? req.body.orderNumber.trim() : '';
+    const trackingToken = typeof req.body?.trackingToken === 'string' ? req.body.trackingToken.trim() : '';
+
+    if (!orderNumber || !trackingToken) {
+      return res.status(400).json({
+        error: 'يرجى إدخال رقم الطلب والرمز السري معاً للتحقق من حالة الطلب.',
+      });
+    }
+
+    const verifiedOrder = await verifyAndGetGuestOrder(orderNumber, trackingToken);
+    if (!verifiedOrder) {
+      recordTrackAttemptFailure(clientIp);
+      return res.status(404).json({
+        error: 'تعذر التحقق من الطلب. يرجى التأكد من رقم الطلب والرمز السري الصحيح.',
+      });
+    }
+
+    clearTrackAttemptFailures(clientIp);
+    return res.json({ order: verifiedOrder });
+  } catch (error: any) {
+    console.error('Failed to track guest order:', error);
+    return res.status(500).json({ error: 'حدث خطأ أثناء التحقق من الطلب. يرجى المحاولة لاحقاً.' });
   }
 });
 
@@ -216,7 +375,7 @@ function getDynamicSmartProductFallback(seedString: string) {
 }
 
 // AI Product Content Generation using Gemini (with multi-model fallback)
-app.post('/api/generate-product-content', async (req, res) => {
+app.post('/api/generate-product-content', requireAdmin, async (req, res) => {
   try {
     const { imageBase64, mimeType } = req.body;
 
@@ -327,7 +486,7 @@ app.post('/api/generate-product-content', async (req, res) => {
 });
 
 // Amazon Duaa AI Product Analyzer endpoint
-app.post('/api/ai/product-analyze', async (req, res) => {
+app.post('/api/ai/product-analyze', requireAdmin, async (req, res) => {
   try {
     const { imageBase64, mimeType } = req.body;
     if (!imageBase64) {
@@ -396,7 +555,7 @@ app.post('/api/ai/product-analyze', async (req, res) => {
 });
 
 // Amazon Duaa AI Admin Copilot endpoint
-app.post('/api/ai/copilot', async (req, res) => {
+app.post('/api/ai/copilot', requireAdmin, async (req, res) => {
   try {
     const { message, context } = req.body;
     if (!message || typeof message !== 'string') {
@@ -678,7 +837,7 @@ export const TrustBadgesBar: React.FC = () => {
 }
 
 // AI Developer & Code Consultant for Platform Development
-app.post('/api/ai/developer-advisor', async (req, res) => {
+app.post('/api/ai/developer-advisor', requireAdmin, async (req, res) => {
   try {
     const { message, history, context } = req.body;
     if (!message || typeof message !== 'string') {

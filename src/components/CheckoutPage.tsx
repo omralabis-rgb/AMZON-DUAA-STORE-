@@ -28,7 +28,7 @@ interface CheckoutPageProps {
   settings: StoreSettings;
   onUpdateQuantity: (productId: string, delta: number) => void;
   onRemoveItem: (productId: string) => void;
-  onOrderPlaced: (order: Order) => void;
+  onOrderPlaced: (order: Order) => Promise<{ trackingToken?: string } | void> | void;
   onBackToStore: () => void;
 }
 
@@ -57,6 +57,10 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
   const [copied, setCopied] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [confirmedOrder, setConfirmedOrder] = useState<Order | null>(null);
+  const [confirmedTrackingToken, setConfirmedTrackingToken] = useState<string | null>(null);
+  const [loadingTrackingToken, setLoadingTrackingToken] = useState(false);
+  const [copiedTrackingToken, setCopiedTrackingToken] = useState(false);
+  const [confirmedWhatsAppUrl, setConfirmedWhatsAppUrl] = useState('');
 
   const subtotal = cartItems.reduce((acc, item) => {
     const price = item.product.discount_price ?? item.product.original_price;
@@ -129,11 +133,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
       created_at: new Date().toISOString(),
     };
 
-    onOrderPlaced(newOrder);
-    setConfirmedOrder(newOrder);
-    setIsSuccess(true);
-
-    // Open WhatsApp
+    // Open WhatsApp synchronously in user gesture
     const url = generateWhatsAppOrderUrl(
       cartItems,
       settings,
@@ -143,18 +143,36 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
       orderNum
     );
     window.open(url, '_blank');
+
+    setConfirmedWhatsAppUrl(url);
+    setConfirmedOrder(newOrder);
+    setIsSuccess(true);
+    setConfirmedTrackingToken(null);
+    setLoadingTrackingToken(true);
+
+    Promise.resolve(onOrderPlaced(newOrder))
+      .then((res) => {
+        if (res && typeof res === 'object' && 'trackingToken' in res && res.trackingToken) {
+          setConfirmedTrackingToken(res.trackingToken);
+        }
+      })
+      .finally(() => {
+        setLoadingTrackingToken(false);
+      });
   };
 
   // Success Confirmation Screen
   if (isSuccess && confirmedOrder) {
-    const waUrl = generateWhatsAppOrderUrl(
-      cartItems,
-      settings,
-      customerInfo,
-      couponDiscount,
-      appliedCoupon || undefined,
-      confirmedOrder.order_number
-    );
+    const waUrl =
+      confirmedWhatsAppUrl ||
+      generateWhatsAppOrderUrl(
+        cartItems,
+        settings,
+        customerInfo,
+        couponDiscount,
+        appliedCoupon || undefined,
+        confirmedOrder.order_number
+      );
 
     return (
       <div className="max-w-3xl mx-auto px-4 py-16 text-center animate-in fade-in duration-300">
@@ -178,6 +196,46 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
             <span className="text-stone-500">رقم الطلب:</span>
             <span className="font-mono font-bold text-stone-900 text-sm">#{confirmedOrder.order_number}</span>
           </div>
+
+          {(loadingTrackingToken || confirmedTrackingToken) && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-amber-900 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-amber-700" />
+                  <span>الرمز السري لمتابعة الطلب:</span>
+                </span>
+                {confirmedTrackingToken && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(confirmedTrackingToken);
+                      setCopiedTrackingToken(true);
+                      setTimeout(() => setCopiedTrackingToken(false), 2500);
+                    }}
+                    className="inline-flex items-center gap-1 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-xl text-[11px] font-bold transition-colors cursor-pointer"
+                  >
+                    {copiedTrackingToken ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedTrackingToken ? 'تم النسخ' : 'نسخ الرمز'}</span>
+                  </button>
+                )}
+              </div>
+
+              {loadingTrackingToken ? (
+                <div className="text-[11px] text-amber-800 font-medium">جاري إنشاء رمز المتابعة السري الفريد...</div>
+              ) : (
+                <div
+                  className="font-mono font-black text-sm sm:text-base text-stone-900 bg-white px-3.5 py-2.5 rounded-xl border border-amber-200 select-all text-center tracking-wide"
+                  dir="ltr"
+                >
+                  {confirmedTrackingToken}
+                </div>
+              )}
+
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                يرجى حفظ هذا الرمز السري؛ ستحتاجينه مع رقم الطلب لمتابعة حالة شحنتك من أي جهاز. لا يُحفظ الرمز كنص مكشوف ولن يظهر مرة أخرى بعد مغادرة هذه الصفحة.
+              </p>
+            </div>
+          )}
 
           <div className="flex items-center justify-between pb-3 border-b border-stone-100">
             <span className="text-stone-500">المستلم:</span>

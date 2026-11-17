@@ -26,6 +26,7 @@ import { Category, Product, StoreSettings } from '../types';
 import { SAMPLE_AI_PRESETS } from '../data/initialData';
 import { AIVideoStudio } from './AIVideoStudio';
 import { getSafeImageSrc, getNonEmptySrc, handleProductImageError } from '../lib/image';
+import { getFirebaseIdToken } from '../lib/firebase';
 
 export interface BatchProductItem {
   id: string;
@@ -146,9 +147,13 @@ export const AdminProductForm: React.FC<AdminProductFormProps> = ({
 
   // Helper to send image to AI API
   const requestAiAnalysis = async (base64: string, mimeType: string = 'image/jpeg') => {
+    const token = await getFirebaseIdToken();
     const response = await fetch('/api/generate-product-content', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({
         imageBase64: base64,
         mimeType: mimeType,

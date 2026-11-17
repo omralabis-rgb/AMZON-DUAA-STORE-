@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Trash2, Plus, Minus, MessageCircle, ShoppingBag, Sparkles, Tag, Check, Copy, ArrowRight, CreditCard } from 'lucide-react';
+import { X, Trash2, Plus, Minus, MessageCircle, ShoppingBag, Sparkles, Tag, Check, Copy, ArrowRight, CreditCard, Lock, CheckCircle2 } from 'lucide-react';
 import { CartItem, CustomerOrderInfo, StoreSettings, Order } from '../types';
 import { buildWhatsAppMessage, generateWhatsAppOrderUrl } from '../lib/whatsapp';
 import { getSafeImageSrc, handleProductImageError } from '../lib/image';
@@ -12,7 +12,7 @@ interface CartDrawerProps {
   onRemoveItem: (productId: string) => void;
   onClearCart: () => void;
   settings: StoreSettings;
-  onOrderPlaced?: (order: Order) => void;
+  onOrderPlaced?: (order: Order) => Promise<{ trackingToken?: string } | void> | void;
   onOpenFullCheckout?: () => void;
 }
 
@@ -42,6 +42,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   const [copied, setCopied] = useState(false);
   const [showOrderDetailsForm, setShowOrderDetailsForm] = useState(true);
+  const [guestReceipt, setGuestReceipt] = useState<{
+    orderNumber: string;
+    trackingToken: string | null;
+    loading: boolean;
+    whatsappUrl: string;
+  } | null>(null);
+  const [copiedToken, setCopiedToken] = useState(false);
 
   if (!isOpen) return null;
 
@@ -112,10 +119,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       created_at: new Date().toISOString(),
     };
 
-    if (onOrderPlaced) {
-      onOrderPlaced(newOrder);
-    }
-
     const url = generateWhatsAppOrderUrl(
       cartItems,
       settings,
@@ -125,6 +128,26 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       orderNum
     );
     window.open(url, '_blank');
+
+    setGuestReceipt({
+      orderNumber: orderNum,
+      trackingToken: null,
+      loading: true,
+      whatsappUrl: url,
+    });
+
+    if (onOrderPlaced) {
+      Promise.resolve(onOrderPlaced(newOrder))
+        .then((res) => {
+          const token = res && typeof res === 'object' && 'trackingToken' in res ? res.trackingToken || null : null;
+          setGuestReceipt((prev) => (prev ? { ...prev, trackingToken: token, loading: false } : prev));
+        })
+        .catch(() => {
+          setGuestReceipt((prev) => (prev ? { ...prev, loading: false } : prev));
+        });
+    } else {
+      setGuestReceipt((prev) => (prev ? { ...prev, loading: false } : prev));
+    }
   };
 
   const handleCopyOrderText = () => {
@@ -206,21 +229,95 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         {/* Items List */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 divide-y divide-stone-100">
           {cartItems.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center p-8">
-              <div className="w-20 h-20 rounded-full bg-rose-50 text-rose-400 flex items-center justify-center mb-4">
-                <ShoppingBag className="w-10 h-10" />
+            guestReceipt ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-5 space-y-4">
+                <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-200">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <div>
+                  <h3 className="font-black text-stone-900 text-lg">تم تسجيل طلبكِ بنجاح</h3>
+                  <p className="text-xs text-stone-500 mt-1">
+                    رقم الطلب: <strong className="font-mono text-stone-900">#{guestReceipt.orderNumber}</strong>
+                  </p>
+                </div>
+
+                {(guestReceipt.loading || guestReceipt.trackingToken) && (
+                  <div className="w-full p-4 rounded-2xl bg-amber-50 border border-amber-200 text-right space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-amber-700" />
+                        <span>الرمز السري لمتابعة الطلب:</span>
+                      </span>
+                      {guestReceipt.trackingToken && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(guestReceipt.trackingToken!);
+                            setCopiedToken(true);
+                            setTimeout(() => setCopiedToken(false), 2500);
+                          }}
+                          className="inline-flex items-center gap-1 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-xl text-[11px] font-bold cursor-pointer"
+                        >
+                          {copiedToken ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedToken ? 'تم النسخ' : 'نسخ الرمز'}</span>
+                        </button>
+                      )}
+                    </div>
+                    {guestReceipt.loading ? (
+                      <p className="text-[11px] text-amber-800">جاري توليد الرمز السري الفريد...</p>
+                    ) : (
+                      <div
+                        className="font-mono font-black text-xs sm:text-sm text-stone-900 bg-white px-3 py-2 rounded-xl border border-amber-200 select-all text-center"
+                        dir="ltr"
+                      >
+                        {guestReceipt.trackingToken}
+                      </div>
+                    )}
+                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                      احتفظي بهذا الرمز السري مع رقم الطلب لمتابعة حالة الشحنة من أي جهاز.
+                    </p>
+                  </div>
+                )}
+
+                <div className="w-full flex flex-col gap-2 pt-2">
+                  <a
+                    href={guestReceipt.whatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 px-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span>فتح محادثة واتساب</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGuestReceipt(null);
+                      onClose();
+                    }}
+                    className="w-full bg-stone-900 hover:bg-stone-800 text-white py-2.5 px-4 rounded-2xl text-xs font-bold cursor-pointer"
+                  >
+                    إغلاق ومتابعة التسوق
+                  </button>
+                </div>
               </div>
-              <h3 className="font-bold text-stone-800 text-lg mb-1">سلتك فارغة حالياً</h3>
-              <p className="text-xs text-stone-500 max-w-xs mb-6">
-                استكشف مجموعتنا الفاخرة من منتجات العناية والتجميل والعطور وأضف منتجاتك المفضلة!
-              </p>
-              <button
-                onClick={onClose}
-                className="bg-stone-900 hover:bg-stone-800 text-white px-6 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-md"
-              >
-                تصفح المنتجات الآن
-              </button>
-            </div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-center p-8">
+                <div className="w-20 h-20 rounded-full bg-rose-50 text-rose-400 flex items-center justify-center mb-4">
+                  <ShoppingBag className="w-10 h-10" />
+                </div>
+                <h3 className="font-bold text-stone-800 text-lg mb-1">سلتك فارغة حالياً</h3>
+                <p className="text-xs text-stone-500 max-w-xs mb-6">
+                  استكشف مجموعتنا الفاخرة من منتجات العناية والتجميل والعطور وأضف منتجاتك المفضلة!
+                </p>
+                <button
+                  onClick={onClose}
+                  className="bg-stone-900 hover:bg-stone-800 text-white px-6 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-md"
+                >
+                  تصفح المنتجات الآن
+                </button>
+              </div>
+            )
           ) : (
             <div className="space-y-4">
               {cartItems.map((item) => {
