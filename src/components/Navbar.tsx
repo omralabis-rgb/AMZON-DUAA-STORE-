@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, ShoppingBag, SlidersHorizontal, Store, Code, Code2, ShieldCheck, Package, Cloud, Lock, LogOut, CreditCard, Search, X, Heart, Truck, User as UserIcon, LogIn, ChevronDown, Flame } from 'lucide-react';
+import { Sparkles, ShoppingBag, SlidersHorizontal, Store, Code, Code2, ShieldCheck, Package, Cloud, Lock, LogOut, CreditCard, Search, X, Heart, Truck, User as UserIcon, LogIn, ChevronDown, Flame, Bot } from 'lucide-react';
 import { StoreSettings, AdminUser, Product, UserProfile } from '../types';
 import { env } from '../lib/env';
 import { SmartSearchBar } from './SmartSearchBar';
 
 interface NavbarProps {
-  activeTab: 'store' | 'admin' | 'orders' | 'checkout' | 'product-detail' | 'dev-advisor' | 'track-order';
-  setActiveTab: (tab: 'store' | 'admin' | 'orders' | 'checkout' | 'product-detail' | 'dev-advisor' | 'track-order') => void;
+  activeTab: 'store' | 'admin' | 'orders' | 'checkout' | 'product-detail' | 'dev-advisor' | 'track-order' | 'ai-assistant';
+  setActiveTab: (tab: 'store' | 'admin' | 'orders' | 'checkout' | 'product-detail' | 'dev-advisor' | 'track-order' | 'ai-assistant') => void;
   cartCount: number;
   cartTotal: number;
   onOpenCart: () => void;
@@ -161,6 +161,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <Truck className={`w-3.5 h-3.5 ${activeTab === 'track-order' ? 'text-white' : 'text-rose-600'}`} />
                 <span className="hidden sm:inline">تتبع طلبك</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('ai-assistant')}
+                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl transition-all ${
+                  activeTab === 'ai-assistant'
+                    ? 'bg-rose-600 text-white shadow-xs font-bold'
+                    : 'text-stone-700 bg-rose-50/80 hover:bg-rose-100/80 border border-rose-200/90 hover:text-rose-900 font-bold'
+                }`}
+                title="المساعد الذكي لإدارة وتعديل المنتجات (كلمة المرور: 12345678)"
+              >
+                <Bot className={`w-3.5 h-3.5 ${activeTab === 'ai-assistant' ? 'text-white' : 'text-rose-600'}`} />
+                <span className="text-xs">المساعد الذكي</span>
               </button>
 
               {cartCount > 0 && (

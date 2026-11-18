@@ -3,6 +3,8 @@ import { Navbar } from './components/Navbar';
 import { StoreFront } from './components/StoreFront';
 import { CartDrawer } from './components/CartDrawer';
 import { FlashSaleBanner } from './components/FlashSaleBanner';
+import { AdminLogin } from './components/AdminLogin';
+import { AIAssistantPage } from './components/AIAssistantPage';
 import { Product, StoreSettings, CartItem, Order, OrderStatus, AdminUser } from './types';
 import { INITIAL_CATEGORIES } from './data/initialData';
 import {
@@ -62,7 +64,6 @@ import {
   AdminProductForm,
   AdminProductList,
   AdminSettings,
-  AdminLogin,
   SupabaseCodeModal,
   AdminCopilotModal,
 } from './lib/lazyImports';
@@ -98,7 +99,7 @@ export default function App() {
     guestCartRef.current = cart;
   }, [cart]);
 
-  const [activeTab, setActiveTab] = useState<'store' | 'product-detail' | 'checkout' | 'orders' | 'admin' | 'dev-advisor' | 'track-order'>('store');
+  const [activeTab, setActiveTab] = useState<'store' | 'product-detail' | 'checkout' | 'orders' | 'admin' | 'dev-advisor' | 'track-order' | 'ai-assistant'>('store');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -755,6 +756,23 @@ export default function App() {
             onAddToCart={handleAddToCart}
             allProducts={products}
             currentUser={currentUser}
+          />
+        )}
+
+        {/* Standalone AI Product Assistant View (Protected by Passcode 12345678) */}
+        {activeTab === 'ai-assistant' && (
+          <AIAssistantPage
+            products={products}
+            categories={INITIAL_CATEGORIES}
+            settings={settings}
+            onProductCreated={handleProductCreated}
+            onUpdateProduct={handleUpdateProduct}
+            onDeleteProduct={handleDeleteProduct}
+            onBackToStore={() => {
+              setActiveTab('store');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onOpenAdmin={() => setActiveTab('admin')}
           />
         )}
         </Suspense>

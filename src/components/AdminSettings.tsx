@@ -129,6 +129,23 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
           </div>
         </div>
 
+        {/* AI Assistant Access Information Card */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-rose-50 to-indigo-50 border border-rose-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <h4 className="font-bold text-stone-900 text-xs sm:text-sm flex items-center gap-1.5">
+              <span>🤖 المساعد الذكي لإدارة المنتجات (صفحة مستقلة)</span>
+            </h4>
+            <p className="text-[11px] text-stone-600 leading-relaxed">
+              يمكنك مشاركة رمز المرور التالي مع أي شخص ترغب بمنحه صلاحية إضافة وتعديل وحذف المنتجات عبر الذكاء الاصطناعي:
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="font-mono font-bold text-sm bg-white px-3.5 py-1.5 rounded-xl border border-stone-300 text-rose-700 shadow-2xs">
+              12345678
+            </span>
+          </div>
+        </div>
+
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-stone-100">
           <button

@@ -109,13 +109,7 @@ export const AdminSettings = lazy(() =>
   )
 );
 
-export const AdminLogin = lazy(() =>
-  retryImport(() =>
-    import('../components/AdminLogin').then((m) => ({
-      default: m.AdminLogin || m.default,
-    }))
-  )
-);
+export { AdminLogin } from '../components/AdminLogin';
 
 export const SupabaseCodeModal = lazy(() =>
   retryImport(() =>

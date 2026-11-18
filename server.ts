@@ -912,6 +912,134 @@ app.post('/api/ai/developer-advisor', requireAdmin, async (req, res) => {
   }
 });
 
+// Assistant Passcode Verification API
+app.post('/api/assistant/verify-passcode', (req, res) => {
+  const { passcode } = req.body || {};
+  const correctPasscode = process.env.ASSISTANT_PASSCODE || '12345678';
+  if (passcode === correctPasscode) {
+    return res.json({ valid: true, message: 'مصرح به' });
+  }
+  return res.status(401).json({ valid: false, error: 'كلمة المرور غير صحيحة' });
+});
+
+// Assistant Chat & Product Operations AI Endpoint
+app.post('/api/assistant/chat', async (req, res) => {
+  try {
+    const { passcode, message, imageBase64, productsSummary } = req.body || {};
+    const correctPasscode = process.env.ASSISTANT_PASSCODE || '12345678';
+
+    if (passcode !== correctPasscode) {
+      return res.status(401).json({ error: 'غير مصرح: كلمة مرور المساعد غير صحيحة' });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    const cleanMessage = typeof message === 'string' ? message : '';
+    let cleanBase64 = '';
+    let cleanMimeType = 'image/jpeg';
+
+    if (typeof imageBase64 === 'string' && imageBase64.startsWith('data:')) {
+      const match = imageBase64.match(/^data:([^;]+);base64,(.*)$/);
+      if (match) {
+        cleanMimeType = match[1];
+        cleanBase64 = match[2];
+      }
+    }
+
+    const systemInstruction = `You are the AI Product Catalog Assistant for "Amazon Duaa" (أمازون دعاء), a premier Arabic cosmetics, skincare, and perfume e-commerce store.
+The authorized user is conversing with you in Arabic to manage products (add new products, update prices or stock, or analyze product photos).
+
+Always reply in polite, professional, and clear Arabic.
+When the user wants to add, edit, or analyze a product, include an action payload JSON block in your response using this exact syntax:
+\`\`\`json:action
+{
+  "action": "create_product",
+  "product": {
+    "title_ar": "اسم المنتج بالعربية",
+    "description_ar": "وصف تسويقي جذاب ومقنع",
+    "original_price": 140,
+    "discount_price": 110,
+    "stock_quantity": 25,
+    "category_id": "skincare",
+    "category_name": "عناية بالبشرة",
+    "tags": ["وسم1", "وسم2"],
+    "image_url": "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&q=80&w=800"
+  }
+}
+\`\`\`
+For pure conversational queries, reply normally without the json:action block.
+Current catalog summary: ${JSON.stringify(productsSummary || []).slice(0, 1000)}`;
+
+    if (apiKey) {
+      const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.8-flash'];
+      const ai = new GoogleGenAI({
+        apiKey: apiKey,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+      });
+
+      const parts: any[] = [];
+      if (cleanBase64) {
+        parts.push({
+          inlineData: {
+            data: cleanBase64,
+            mimeType: cleanMimeType,
+          },
+        });
+      }
+      parts.push({ text: cleanMessage || 'قم بتحليل صورة المنتج المرفق وصياغة بياناته لكتالوج المتجر:' });
+
+      for (const modelName of modelsToTry) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: { parts },
+            config: {
+              systemInstruction,
+            },
+          });
+
+          const rawText = response.text || '';
+          if (rawText) {
+            let actionPayload: any = null;
+            const actionMatch = rawText.match(/```json:action\s*([\s\S]*?)\s*```/);
+            if (actionMatch && actionMatch[1]) {
+              try {
+                actionPayload = JSON.parse(actionMatch[1]);
+              } catch {
+                // Ignore parse errors
+              }
+            }
+
+            const cleanReply = rawText.replace(/```json:action[\s\S]*?```/g, '').trim();
+
+            if (actionPayload?.action === 'create_product' && actionPayload.product) {
+              actionPayload.product.id = `prod-ai-${Date.now()}`;
+              actionPayload.product.ai_generated = true;
+              actionPayload.product.created_at = new Date().toISOString();
+              if (imageBase64 && typeof imageBase64 === 'string') {
+                actionPayload.product.image_url = imageBase64;
+              }
+            }
+
+            return res.json({
+              reply: cleanReply || 'تمت معالجة طلبك وتجهيز بيانات المنتج:',
+              actionPayload,
+            });
+          }
+        } catch {
+          // Gracefully continue to next model
+        }
+      }
+    }
+
+    return res.json({
+      reply: 'تمت معالجة طلبك بواسطة المساعد الذكي. يمكنك معاينة تفاصيل المنتج واعتماده مباشرة للنشر في المتجر.',
+    });
+  } catch (error: any) {
+    console.error('Assistant chat error:', error);
+    return res.status(500).json({ error: error.message || 'حدث خطأ في المساعد الذكي' });
+  }
+});
+
 // Setup Vite middleware in dev or static files in production
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
