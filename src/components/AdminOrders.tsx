@@ -3,6 +3,7 @@ import { Package, MessageCircle, Eye, Search, Filter, CheckCircle2, Clock, Truck
 import { Order, OrderStatus, StoreSettings } from '../types';
 import { generateOrderStatusWhatsAppUrl } from '../lib/whatsapp';
 import { ShippingRouteMap } from './ShippingRouteMap';
+import { AdminAnalyticsCharts } from './AdminAnalyticsCharts';
 import { getSafeImageSrc, handleProductImageError } from '../lib/image';
 
 interface AdminOrdersProps {
@@ -113,6 +114,11 @@ export const AdminOrders: React.FC<AdminOrdersProps> = ({
           <span className="text-[11px] font-bold text-rose-700 block mb-1">إجمالي عدد الطلبات</span>
           <span className="text-xl sm:text-2xl font-black text-rose-900">{orders.length}</span>
         </div>
+      </div>
+
+      {/* Interactive Charts & Analytics Dashboard */}
+      <div className="mb-8">
+        <AdminAnalyticsCharts orders={orders} products={[]} settings={settings} />
       </div>
 
       {/* Filters Bar */}
